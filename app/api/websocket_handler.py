@@ -7,6 +7,7 @@ import logging
 import base64
 from app.agents.agent_configs import get_choice_agent_config, get_episode_agent_config
 from app.agents.agent_tools import TOOL_HANDLERS
+from app.utils.audio import AudioProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,28 @@ class WebSocketHandler:
                 "message": "Welcome! I'm here to help you choose a fun language learning episode! 🎉"
             })
             
-            # Trigger initial response
-            self.realtime_manager.create_response(esp32_id)
+            # Send initial message to trigger audio response
+            self.realtime_manager.send_event(esp32_id, {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Hi! Please introduce yourself and the available episodes with your voice."
+                        }
+                    ]
+                }
+            })
+            
+            # Trigger initial response with audio
+            self.realtime_manager.send_event(esp32_id, {
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"]
+                }
+            })
             
             # Main message loop
             while True:
@@ -101,8 +122,22 @@ class WebSocketHandler:
             # Convert hex to bytes
             audio_data = bytes.fromhex(audio_data_hex)
             
+            # Convert from 16kHz to 24kHz for OpenAI
+            audio_processor = AudioProcessor()
+            audio_24khz = audio_processor.convert_sample_rate(audio_data, 16000, 24000)
+            
+            # Log audio info
+            logger.debug(f"Received audio from {esp32_id}: {len(audio_data)} bytes -> {len(audio_24khz)} bytes (24kHz)")
+            
             # Send to OpenAI Realtime API
-            self.realtime_manager.send_audio(esp32_id, audio_data)
+            self.realtime_manager.send_audio(esp32_id, audio_24khz)
+            
+            # Check if this is silence
+            if audio_processor.detect_silence(audio_data):
+                logger.debug(f"Detected silence from {esp32_id}")
+            else:
+                # Commit audio buffer to trigger response after non-silence
+                self.realtime_manager.commit_audio(esp32_id)
             
             # Update activity
             session = await self.cache_manager.get_session(esp32_id)
@@ -113,36 +148,87 @@ class WebSocketHandler:
     async def handle_realtime_message(self, esp32_id: str, message: Dict[str, Any]):
         """Handle messages from OpenAI Realtime API"""
         event_type = message.get('type')
+        logger.debug(f"Realtime event for {esp32_id}: {event_type}")
         
         if event_type == 'session.created':
             logger.info(f"Realtime session created for {esp32_id}")
+            session_id = message.get('session', {}).get('id')
+            logger.info(f"Session ID: {session_id}")
+            
+        elif event_type == 'response.audio.done':
+            # Audio generation completed
+            logger.info(f"Audio generation completed for {esp32_id}")
+            # You might want to send an event to indicate audio is complete
+            await self.ws_manager.send_message(esp32_id, {
+                "type": "audio_complete"
+            })
             
         elif event_type == 'response.audio.delta':
             # Audio chunk from assistant
             audio_data = message.get('delta')
             if audio_data:
-                # Send audio to ESP32
-                await self.ws_manager.send_audio(esp32_id, base64.b64decode(audio_data))
+                try:
+                    # Decode base64 audio (24kHz from OpenAI)
+                    audio_bytes_24khz = base64.b64decode(audio_data)
+                    
+                    # Convert from 24kHz to 16kHz for ESP32
+                    audio_processor = AudioProcessor()
+                    audio_bytes_16khz = audio_processor.convert_sample_rate(audio_bytes_24khz, 24000, 16000)
+                    
+                    logger.debug(f"Sending audio chunk to {esp32_id} (24kHz: {len(audio_bytes_24khz)} -> 16kHz: {len(audio_bytes_16khz)} bytes)")
+                    await self.ws_manager.send_audio(esp32_id, audio_bytes_16khz)
+                except Exception as e:
+                    logger.error(f"Error processing audio for {esp32_id}: {e}")
                 
         elif event_type == 'response.audio_transcript.delta':
             # Transcript update
             text = message.get('delta', '')
-            await self.ws_manager.send_text(esp32_id, text, is_final=False)
+            if text:
+                logger.debug(f"Transcript delta for {esp32_id}: {text}")
+                await self.ws_manager.send_text(esp32_id, text, is_final=False)
             
         elif event_type == 'response.audio_transcript.done':
             # Final transcript
             text = message.get('transcript', '')
-            await self.ws_manager.send_text(esp32_id, text, is_final=True)
+            if text:
+                logger.info(f"Final transcript for {esp32_id}: {text}")
+                await self.ws_manager.send_text(esp32_id, text, is_final=True)
+            
+        elif event_type == 'response.text.delta':
+            # Text response chunk
+            text = message.get('delta', '')
+            if text:
+                logger.debug(f"Text delta for {esp32_id}: {text}")
+                await self.ws_manager.send_text(esp32_id, text, is_final=False)
+                
+        elif event_type == 'response.text.done':
+            # Final text response
+            text = message.get('text', '')
+            if text:
+                logger.info(f"Final text for {esp32_id}: {text}")
+                await self.ws_manager.send_text(esp32_id, text, is_final=True)
             
         elif event_type == 'response.function_call_arguments.done':
             # Function call from agent
             await self.handle_function_call(esp32_id, message)
             
+        elif event_type == 'response.done':
+            # Response completed
+            response = message.get('response', {})
+            status = response.get('status')
+            logger.info(f"Response completed for {esp32_id} with status: {status}")
+            
+            # Check output types
+            output = response.get('output', [])
+            for item in output:
+                logger.debug(f"Output item type: {item.get('type')}")
+                
         elif event_type == 'error':
-            logger.error(f"Realtime API error for {esp32_id}: {message}")
+            error_info = message.get('error', {})
+            logger.error(f"Realtime API error for {esp32_id}: {error_info}")
             await self.ws_manager.send_message(esp32_id, {
                 "type": "error",
-                "message": "An error occurred. Please try again."
+                "message": error_info.get('message', 'An error occurred')
             })
     
     async def handle_function_call(self, esp32_id: str, message: Dict[str, Any]):

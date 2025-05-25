@@ -3,6 +3,9 @@ import base64
 from typing import Tuple, Optional
 import wave
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     """Audio processing utilities for ESP32 communication"""

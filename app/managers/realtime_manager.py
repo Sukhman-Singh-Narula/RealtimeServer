@@ -35,15 +35,27 @@ class RealtimeConnection:
         def on_message(ws, message):
             try:
                 data = json.loads(message)
+                event_type = data.get('type', 'unknown')
+                logger.debug(f"Realtime API event for {self.esp32_id}: {event_type}")
                 
                 # Extract session ID from session.created event
-                if data.get("type") == "session.created":
+                if event_type == "session.created":
                     self.session_id = data.get("session", {}).get("id")
+                    logger.info(f"Session ID: {self.session_id}")
+                    
+                # Log important events
+                if event_type in ["response.audio.delta", "response.audio.done"]:
+                    logger.debug(f"Audio event: {event_type}")
+                elif event_type == "response.done":
+                    logger.debug(f"Response completed with status: {data.get('response', {}).get('status')}")
+                elif event_type == "error":
+                    logger.error(f"Realtime API error: {data}")
                 
                 # Pass message to callback
                 asyncio.run(self.on_message_callback(self.esp32_id, data))
             except Exception as e:
                 logger.error(f"Error processing message: {e}")
+                logger.error(f"Message was: {message[:200]}...")  # Log first 200 chars
                 
         def on_error(ws, error):
             logger.error(f"WebSocket error for {self.esp32_id}: {error}")
@@ -133,12 +145,16 @@ class RealtimeManager:
                 "instructions": instructions,
                 "voice": voice,
                 "input_audio_transcription": {"model": "whisper-1"},
+                "output_audio_format": "pcm16",  # Request PCM16 audio output
                 "tools": tools or [],
+                "tool_choice": "auto",
+                "temperature": 0.8,
                 "turn_detection": turn_detection or {
                     "type": "server_vad",
                     "threshold": 0.5,
                     "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500
+                    "silence_duration_ms": 500,
+                    "create_response": True  # Auto create response after silence
                 }
             }
         }
@@ -158,8 +174,14 @@ class RealtimeManager:
         self.send_event(esp32_id, {"type": "input_audio_buffer.commit"})
     
     def create_response(self, esp32_id: str):
-        """Trigger response generation"""
-        self.send_event(esp32_id, {"type": "response.create"})
+        """Trigger response generation with audio"""
+        self.send_event(esp32_id, {
+            "type": "response.create",
+            "response": {
+                "modalities": ["text", "audio"],
+                "instructions": "Please respond with both text and voice audio."
+            }
+        })
     
     def close_connection(self, esp32_id: str):
         """Close and remove connection"""
