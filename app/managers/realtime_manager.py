@@ -2,7 +2,7 @@ import asyncio
 import json
 import websocket
 import threading
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 import logging
 from app.config import settings
 import base64
@@ -25,6 +25,7 @@ class RealtimeConnection:
         self.is_connected = False
         self.session_id = None
         self.thread = None
+        self.is_generating_response = False
         
     def connect(self):
         """Connect to OpenAI Realtime API"""
@@ -41,13 +42,20 @@ class RealtimeConnection:
                 # Extract session ID from session.created event
                 if event_type == "session.created":
                     self.session_id = data.get("session", {}).get("id")
-                    logger.info(f"Session ID: {self.session_id}")
+                    logger.info(f"Session ID for {self.esp32_id}: {self.session_id}")
+                
+                # Track response generation state
+                elif event_type == "response.created":
+                    self.is_generating_response = True
+                    logger.info(f"Creating response for {self.esp32_id} with modalities: {data.get('response', {}).get('modalities', [])}")
+                    
+                elif event_type == "response.done":
+                    self.is_generating_response = False
+                    logger.info(f"Response completed for {self.esp32_id} with status: {data.get('response', {}).get('status')}")
                     
                 # Log important events
-                if event_type in ["response.audio.delta", "response.audio.done"]:
+                elif event_type in ["response.audio.delta", "response.audio.done"]:
                     logger.debug(f"Audio event: {event_type}")
-                elif event_type == "response.done":
-                    logger.debug(f"Response completed with status: {data.get('response', {}).get('status')}")
                 elif event_type == "error":
                     logger.error(f"Realtime API error: {data}")
                 
@@ -61,7 +69,7 @@ class RealtimeConnection:
             logger.error(f"WebSocket error for {self.esp32_id}: {error}")
             
         def on_close(ws, close_status_code, close_msg):
-            logger.info(f"WebSocket closed for {self.esp32_id}")
+            logger.info(f"WebSocket closed for {self.esp32_id}: code={close_status_code}, msg={close_msg}")
             self.is_connected = False
             
         self.ws = websocket.WebSocketApp(
@@ -79,7 +87,7 @@ class RealtimeConnection:
         self.thread.start()
         
         # Wait for connection
-        timeout = 5
+        timeout = 10
         start = time.time()
         while not self.is_connected and (time.time() - start) < timeout:
             time.sleep(0.1)
@@ -92,6 +100,7 @@ class RealtimeConnection:
         if self.ws and self.is_connected:
             try:
                 self.ws.send(json.dumps(event))
+                logger.debug(f"Sent event to {self.esp32_id}: {event.get('type', 'unknown')}")
             except Exception as e:
                 logger.error(f"Error sending event: {e}")
     
@@ -138,26 +147,38 @@ class RealtimeManager:
     def update_session(self, esp32_id: str, instructions: str, voice: str = "alloy", 
                       tools: list = None, turn_detection: dict = None):
         """Update session configuration"""
+        logger.info(f"Updating session for {esp32_id} with voice: {voice}")
+        logger.info(f"Setting instructions for {esp32_id}: {instructions[:100]}...")
+        
         event = {
             "type": "session.update",
             "session": {
                 "modalities": ["text", "audio"],
                 "instructions": instructions,
                 "voice": voice,
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
                 "input_audio_transcription": {"model": "whisper-1"},
-                "output_audio_format": "pcm16",  # Request PCM16 audio output
-                "tools": tools or [],
                 "tool_choice": "auto",
-                "temperature": 0.8,
+                "temperature": 0.7,
+                "max_response_output_tokens": "inf",
                 "turn_detection": turn_detection or {
                     "type": "server_vad",
                     "threshold": 0.5,
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 500,
-                    "create_response": True  # Auto create response after silence
+                    "create_response": False  # Don't auto-create responses
                 }
             }
         }
+        
+        # Add tools if provided
+        if tools:
+            event["session"]["tools"] = tools
+            logger.info(f"Added {len(tools)} tools for {esp32_id}")
+        else:
+            event["session"]["tools"] = []
+            
         self.send_event(esp32_id, event)
     
     def send_audio(self, esp32_id: str, audio_data: bytes):
@@ -173,18 +194,30 @@ class RealtimeManager:
         """Commit audio buffer and create response"""
         self.send_event(esp32_id, {"type": "input_audio_buffer.commit"})
     
-    def create_response(self, esp32_id: str):
-        """Trigger response generation with audio"""
-        self.send_event(esp32_id, {
+    def create_response(self, esp32_id: str, modalities: List[str] = None):
+        """Trigger response generation with specified modalities"""
+        if modalities is None:
+            modalities = ["text", "audio"]
+            
+        connection = self.connections.get(esp32_id)
+        if connection and connection.is_generating_response:
+            logger.warning(f"Already generating response for {esp32_id}, skipping")
+            return
+            
+        event = {
             "type": "response.create",
             "response": {
-                "modalities": ["text", "audio"],
+                "modalities": modalities,
                 "instructions": "Please respond with both text and voice audio."
             }
-        })
+        }
+        
+        logger.info(f"Creating response for {esp32_id} with modalities: {modalities}")
+        self.send_event(esp32_id, event)
     
     def close_connection(self, esp32_id: str):
         """Close and remove connection"""
+        logger.info(f"Closing connection for {esp32_id}")
         if esp32_id in self.connections:
             self.connections[esp32_id].close()
             del self.connections[esp32_id]
