@@ -131,8 +131,14 @@ class RealtimeManager:
     
     async def _handle_message(self, esp32_id: str, message: Dict[str, Any]):
         """Route messages to appropriate handlers"""
-        if esp32_id in self.message_handlers:
-            await self.message_handlers[esp32_id](message)
+        try:
+            if esp32_id in self.message_handlers:
+                # Use create_task to avoid loop attachment issues
+                handler = self.message_handlers[esp32_id]
+                asyncio.create_task(handler(message))
+        except Exception as e:
+            logger.error(f"Error in message handler for {esp32_id}: {e}")
+            logger.error(f"Message was: {str(message)[:200]}...")
     
     def get_connection(self, esp32_id: str) -> Optional[RealtimeConnection]:
         """Get existing connection"""
@@ -148,7 +154,8 @@ class RealtimeManager:
                       tools: list = None, turn_detection: dict = None):
         """Update session configuration"""
         logger.info(f"Updating session for {esp32_id} with voice: {voice}")
-        logger.info(f"Setting instructions for {esp32_id}: {instructions[:100]}...")
+        logger.info(f"Instructions length: {len(instructions)} characters")
+        logger.info(f"Instructions preview: {instructions[:200]}...")
         
         event = {
             "type": "session.update",
@@ -160,14 +167,14 @@ class RealtimeManager:
                 "output_audio_format": "pcm16",
                 "input_audio_transcription": {"model": "whisper-1"},
                 "tool_choice": "auto",
-                "temperature": 0.7,
+                "temperature": 0.6,
                 "max_response_output_tokens": "inf",
                 "turn_detection": turn_detection or {
                     "type": "server_vad",
                     "threshold": 0.5,
                     "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500,
-                    "create_response": False  # Don't auto-create responses
+                    "silence_duration_ms": 1200,  # Wait longer for user to finish speaking
+                    "create_response": True  # Auto-create response when user stops talking
                 }
             }
         }
@@ -179,7 +186,9 @@ class RealtimeManager:
         else:
             event["session"]["tools"] = []
             
+        logger.info(f"Sending session update event for {esp32_id}")
         self.send_event(esp32_id, event)
+        logger.info(f"Session update event sent successfully for {esp32_id}")
     
     def send_audio(self, esp32_id: str, audio_data: bytes):
         """Send audio to OpenAI"""
@@ -200,7 +209,11 @@ class RealtimeManager:
             modalities = ["text", "audio"]
             
         connection = self.connections.get(esp32_id)
-        if connection and connection.is_generating_response:
+        if not connection:
+            logger.error(f"No connection found for {esp32_id}")
+            return
+            
+        if connection.is_generating_response:
             logger.warning(f"Already generating response for {esp32_id}, skipping")
             return
             
@@ -213,13 +226,25 @@ class RealtimeManager:
         }
         
         logger.info(f"Creating response for {esp32_id} with modalities: {modalities}")
+        connection.is_generating_response = True  # Set flag before sending
         self.send_event(esp32_id, event)
     
     def close_connection(self, esp32_id: str):
         """Close and remove connection"""
         logger.info(f"Closing connection for {esp32_id}")
-        if esp32_id in self.connections:
-            self.connections[esp32_id].close()
-            del self.connections[esp32_id]
-        if esp32_id in self.message_handlers:
-            del self.message_handlers[esp32_id]
+        
+        try:
+            if esp32_id in self.connections:
+                connection = self.connections[esp32_id]
+                connection.close()
+                del self.connections[esp32_id]
+                logger.info(f"Closed OpenAI connection for {esp32_id}")
+        except Exception as e:
+            logger.error(f"Error closing OpenAI connection for {esp32_id}: {e}")
+            
+        try:
+            if esp32_id in self.message_handlers:
+                del self.message_handlers[esp32_id]
+                logger.info(f"Removed message handler for {esp32_id}")
+        except Exception as e:
+            logger.error(f"Error removing message handler for {esp32_id}: {e}")

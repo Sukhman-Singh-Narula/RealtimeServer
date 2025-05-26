@@ -21,6 +21,17 @@ class WebSocketHandler:
     
     async def handle_connection(self, websocket: WebSocket, esp32_id: str):
         """Main WebSocket connection handler"""
+        # Clean up device ID if malformed
+        esp32_id = esp32_id.strip('{}')
+        logger.info(f"Handling connection for cleaned device ID: {esp32_id}")
+        
+        # Check if this device already has an active connection
+        existing_connection = self.realtime_manager.get_connection(esp32_id)
+        if existing_connection:
+            logger.info(f"Closing existing connection for {esp32_id}")
+            self.realtime_manager.close_connection(esp32_id)
+            await asyncio.sleep(0.5)  # Brief pause for cleanup
+        
         await self.ws_manager.connect(esp32_id, websocket)
         
         try:
@@ -33,7 +44,8 @@ class WebSocketHandler:
                 "user_id": user.id,
                 "agent_state": "CHOOSING",
                 "connected_at": datetime.utcnow().isoformat(),
-                "current_agent": "choice_agent"
+                "current_agent": "choice_agent",
+                "response_active": False  # Track response state
             })
             
             # Create OpenAI Realtime connection
@@ -44,7 +56,7 @@ class WebSocketHandler:
             )
             
             # Wait for session to be created
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)  # Longer wait for session stability
             
             # Load episodes and configure Choice Agent
             episodes = await self.content_manager.get_available_episodes(user.id)
@@ -56,16 +68,12 @@ class WebSocketHandler:
             logger.info(f"Voice: {choice_config['voice']}")
             logger.info(f"Tools: {len(choice_config['tools'])} tools")
             
-            # Debug: Log first 200 characters of instructions
-            logger.info(f"Instructions preview: {choice_config['instructions'][:200]}...")
+            # Log the actual instructions being sent
+            logger.info(f"FULL INSTRUCTIONS for {esp32_id}:")
+            logger.info(choice_config['instructions'])
             
             # Update session with Choice Agent
-            logger.info(f"Realtime session created for {esp32_id}")
-            logger.info(f"Session ID: {realtime_conn.session_id}")
-            
-            # Wait a moment for session to be ready
-            await asyncio.sleep(1.0)
-            
+            logger.info(f"About to update session for {esp32_id}")
             self.realtime_manager.update_session(
                 esp32_id,
                 instructions=choice_config['instructions'],
@@ -73,10 +81,10 @@ class WebSocketHandler:
                 tools=choice_config['tools']
             )
             
-            logger.info(f"Realtime session updated for {esp32_id}")
+            logger.info(f"Session update sent for {esp32_id}")
             
-            # Wait for session update to be processed
-            await asyncio.sleep(1.0)
+            # Wait longer for session update to be processed
+            await asyncio.sleep(3.0)
             
             # Store realtime session info
             await self.cache_manager.set_realtime_connection(esp32_id, {
@@ -84,37 +92,31 @@ class WebSocketHandler:
                 "connected_at": datetime.utcnow().isoformat()
             })
             
-            # Send welcome message
+            # Send welcome message 
             await self.ws_manager.send_message(esp32_id, {
                 "type": "connected",
                 "user_id": user.id,
-                "message": "Welcome! I'm here to help you choose a fun language learning episode! 🎉"
+                "message": "Welcome! I'm Lingo, ready to help you learn languages! 🎉 Try saying 'What is your name?' or 'What is red in Spanish?'"
             })
             
-            # Send a user message to trigger the choice agent behavior
-            self.realtime_manager.send_event(esp32_id, {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Hi! I want to learn a new language. Can you help me choose an episode?"
-                        }
-                    ]
-                }
-            })
-            
-            # Now trigger the response
-            logger.info(f"Response creation started for {esp32_id}")
-            self.realtime_manager.create_response(esp32_id, ["text", "audio"])
+            # DON'T create an initial response - let the conversation be driven by user input
+            logger.info(f"Setup complete for {esp32_id}. Ready for conversation!")
             
             # Main message loop
             while True:
                 try:
-                    # Use receive_text() and receive_bytes() instead of receive_json()
-                    message = await websocket.receive()
+                    # Check if WebSocket is still connected
+                    if hasattr(websocket, 'client_state') and websocket.client_state.name != 'CONNECTED':
+                        logger.info(f"WebSocket for {esp32_id} is no longer connected")
+                        break
+                    
+                    # Use asyncio.wait_for to add timeout and detect disconnections
+                    message = await asyncio.wait_for(websocket.receive(), timeout=120.0)  # Increased to 2 minutes
+                    
+                    # Check for WebSocket close message
+                    if message.get("type") == "websocket.disconnect":
+                        logger.info(f"ESP32 {esp32_id} disconnected (disconnect message)")
+                        break
                     
                     if "text" in message:
                         # Handle JSON messages
@@ -133,10 +135,31 @@ class WebSocketHandler:
                         logger.warning(f"Unknown message format from {esp32_id}: {message}")
                         
                 except WebSocketDisconnect:
-                    logger.info(f"ESP32 {esp32_id} disconnected")
+                    logger.info(f"ESP32 {esp32_id} disconnected (WebSocketDisconnect)")
                     break
+                except asyncio.TimeoutError:
+                    # Timeout on receive - connection might be dead
+                    logger.info(f"Timeout waiting for message from {esp32_id}")
+                    break
+                except RuntimeError as e:
+                    if "Cannot call \"receive\" once a disconnect" in str(e):
+                        logger.info(f"ESP32 {esp32_id} disconnected (receive after disconnect)")
+                        break
+                    else:
+                        logger.error(f"Runtime error processing message from {esp32_id}: {e}")
+                        break
                 except Exception as e:
                     logger.error(f"Error processing message from {esp32_id}: {e}")
+                    # Break the loop on critical errors to prevent infinite error spam
+                    error_str = str(e).lower()
+                    if any(phrase in error_str for phrase in [
+                        "cannot call \"receive\"", 
+                        "connection closed", 
+                        "websocket disconnected",
+                        "connection is closed"
+                    ]):
+                        logger.info(f"Breaking message loop for {esp32_id} due to connection error")
+                        break
                     
         except WebSocketDisconnect:
             logger.info(f"ESP32 {esp32_id} disconnected")
@@ -174,10 +197,16 @@ class WebSocketHandler:
                 audio_processor = AudioProcessor()
                 audio_24khz = audio_processor.convert_sample_rate(audio_data, 16000, 24000)
                 
-                # Log audio info
-                logger.debug(f"Received audio from {esp32_id}: {len(audio_data)} bytes -> {len(audio_24khz)} bytes (24kHz)")
+                # Log audio info every 50 chunks to avoid spam
+                if hasattr(self, '_audio_chunk_count'):
+                    self._audio_chunk_count += 1
+                else:
+                    self._audio_chunk_count = 1
+                    
+                if self._audio_chunk_count % 50 == 0:
+                    logger.debug(f"Processing audio chunk #{self._audio_chunk_count} from {esp32_id}: {len(audio_data)} bytes")
                 
-                # Send to OpenAI Realtime API
+                # Send to OpenAI Realtime API - this enables conversation!
                 self.realtime_manager.send_audio(esp32_id, audio_24khz)
                 
                 # Update activity
@@ -190,36 +219,34 @@ class WebSocketHandler:
                 logger.error(f"Invalid hex audio data from {esp32_id}: {e}")
             except Exception as e:
                 logger.error(f"Error processing audio from {esp32_id}: {e}")
-    
-    async def handle_binary_audio_from_esp32(self, esp32_id: str, audio_data: bytes):
-        """Handle incoming binary audio from ESP32"""
-        if audio_data:
-            try:
-                # Convert from 16kHz to 24kHz for OpenAI
-                audio_processor = AudioProcessor()
-                audio_24khz = audio_processor.convert_sample_rate(audio_data, 16000, 24000)
                 
-                # Log audio info
-                logger.debug(f"Received binary audio from {esp32_id}: {len(audio_data)} bytes -> {len(audio_24khz)} bytes (24kHz)")
-                
-                # Send to OpenAI Realtime API
-                self.realtime_manager.send_audio(esp32_id, audio_24khz)
-                
-                # Update activity
-                session = await self.cache_manager.get_session(esp32_id)
-                if session:
-                    session['last_activity'] = datetime.utcnow().isoformat()
-                    await self.cache_manager.set_session(esp32_id, session)
-                    
-            except Exception as e:
-                logger.error(f"Error processing binary audio from {esp32_id}: {e}")
-    
     async def handle_text_from_esp32(self, esp32_id: str, message: Dict[str, Any]):
         """Handle text messages from ESP32"""
         text = message.get('text', '')
         if text:
             logger.info(f"Text message from {esp32_id}: {text}")
-            # You could process text commands here if needed
+            
+            # Send text as conversation item to OpenAI
+            self.realtime_manager.send_event(esp32_id, {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": text
+                        }
+                    ]
+                }
+            })
+            
+            # Create response to the text
+            session = await self.cache_manager.get_session(esp32_id)
+            if session and not session.get('response_active', False):
+                session['response_active'] = True  
+                await self.cache_manager.set_session(esp32_id, session)
+                self.realtime_manager.create_response(esp32_id, ["text", "audio"])
     
     async def handle_realtime_message(self, esp32_id: str, message: Dict[str, Any]):
         """Handle messages from OpenAI Realtime API"""
@@ -295,11 +322,30 @@ class WebSocketHandler:
             # Function call from agent
             await self.handle_function_call(esp32_id, message)
             
+        elif event_type == 'response.created':
+            logger.info(f"Response creation confirmed for {esp32_id}")
+            # Mark response as active
+            session = await self.cache_manager.get_session(esp32_id)
+            if session:
+                session['response_active'] = True
+                await self.cache_manager.set_session(esp32_id, session)
+            
         elif event_type == 'response.done':
             # Response completed
             response = message.get('response', {})
             status = response.get('status')
             logger.info(f"Response completed for {esp32_id} with status: {status}")
+            
+            # Mark response as no longer active - CRITICAL for continued conversation
+            session = await self.cache_manager.get_session(esp32_id)
+            if session:
+                session['response_active'] = False
+                await self.cache_manager.set_session(esp32_id, session)
+            
+            # Clear the response generation flag in the connection
+            connection = self.realtime_manager.get_connection(esp32_id)
+            if connection:
+                connection.is_generating_response = False
             
             # Check output types
             output = response.get('output', [])
@@ -309,6 +355,18 @@ class WebSocketHandler:
         elif event_type == 'error':
             error_info = message.get('error', {})
             logger.error(f"Realtime API error for {esp32_id}: {error_info}")
+            
+            # Mark response as no longer active on error - CRITICAL for recovery
+            session = await self.cache_manager.get_session(esp32_id)
+            if session:
+                session['response_active'] = False
+                await self.cache_manager.set_session(esp32_id, session)
+                
+            # Clear the response generation flag
+            connection = self.realtime_manager.get_connection(esp32_id)
+            if connection:
+                connection.is_generating_response = False
+            
             await self.ws_manager.send_message(esp32_id, {
                 "type": "error",
                 "message": error_info.get('message', 'An error occurred')
@@ -406,18 +464,32 @@ class WebSocketHandler:
         """Cleanup when ESP32 disconnects"""
         logger.info(f"Cleaning up connection for {esp32_id}")
         
-        # End any active learning session
-        session = await self.cache_manager.get_session(esp32_id)
-        if session:
-            learning_session_id = session.get('learning_session_id')
-            if learning_session_id:
-                await self.db_manager.end_session(learning_session_id)
+        try:
+            # End any active learning session
+            session = await self.cache_manager.get_session(esp32_id)
+            if session:
+                learning_session_id = session.get('learning_session_id')
+                if learning_session_id:
+                    await self.db_manager.end_session(learning_session_id)
+        except Exception as e:
+            logger.error(f"Error ending learning session for {esp32_id}: {e}")
         
-        # Close OpenAI connection
-        self.realtime_manager.close_connection(esp32_id)
+        try:
+            # Close OpenAI connection
+            self.realtime_manager.close_connection(esp32_id)
+        except Exception as e:
+            logger.error(f"Error closing OpenAI connection for {esp32_id}: {e}")
         
-        # Remove from WebSocket manager
-        await self.ws_manager.disconnect(esp32_id)
+        try:
+            # Remove from WebSocket manager
+            await self.ws_manager.disconnect(esp32_id)
+        except Exception as e:
+            logger.error(f"Error disconnecting from WebSocket manager for {esp32_id}: {e}")
         
-        # Clear cache
-        await self.cache_manager.delete_connection(esp32_id)
+        try:
+            # Clear cache
+            await self.cache_manager.delete_connection(esp32_id)
+        except Exception as e:
+            logger.error(f"Error clearing cache for {esp32_id}: {e}")
+            
+        logger.info(f"Cleanup completed for {esp32_id}")
