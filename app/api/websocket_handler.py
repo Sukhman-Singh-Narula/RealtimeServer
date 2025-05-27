@@ -186,39 +186,54 @@ class WebSocketHandler:
             logger.warning(f"Unknown message type from ESP32: {msg_type}")
     
     async def handle_audio_from_esp32(self, esp32_id: str, message: Dict[str, Any]):
-        """Handle incoming audio from ESP32"""
+        """Handle incoming audio from ESP32 (JSON format)"""
         audio_data_hex = message.get('audio_data', '')
         if audio_data_hex:
             try:
                 # Convert hex to bytes
                 audio_data = bytes.fromhex(audio_data_hex)
-                
-                # Convert from 16kHz to 24kHz for OpenAI
-                audio_processor = AudioProcessor()
-                audio_24khz = audio_processor.convert_sample_rate(audio_data, 16000, 24000)
-                
-                # Log audio info every 50 chunks to avoid spam
-                if hasattr(self, '_audio_chunk_count'):
-                    self._audio_chunk_count += 1
-                else:
-                    self._audio_chunk_count = 1
-                    
-                if self._audio_chunk_count % 50 == 0:
-                    logger.debug(f"Processing audio chunk #{self._audio_chunk_count} from {esp32_id}: {len(audio_data)} bytes")
-                
-                # Send to OpenAI Realtime API - this enables conversation!
-                self.realtime_manager.send_audio(esp32_id, audio_24khz)
-                
-                # Update activity
-                session = await self.cache_manager.get_session(esp32_id)
-                if session:
-                    session['last_activity'] = datetime.utcnow().isoformat()
-                    await self.cache_manager.set_session(esp32_id, session)
+                await self._process_audio_data(esp32_id, audio_data)
                     
             except ValueError as e:
                 logger.error(f"Invalid hex audio data from {esp32_id}: {e}")
             except Exception as e:
                 logger.error(f"Error processing audio from {esp32_id}: {e}")
+
+    async def handle_binary_audio_from_esp32(self, esp32_id: str, audio_data: bytes):
+        """Handle incoming binary audio data from ESP32"""
+        try:
+            logger.debug(f"Received binary audio from {esp32_id}: {len(audio_data)} bytes")
+            await self._process_audio_data(esp32_id, audio_data)
+        except Exception as e:
+            logger.error(f"Error processing binary audio from {esp32_id}: {e}")
+
+    async def _process_audio_data(self, esp32_id: str, audio_data: bytes):
+        """Common audio processing logic for both JSON and binary audio"""
+        try:
+            # Convert from 16kHz to 24kHz for OpenAI
+            audio_processor = AudioProcessor()
+            audio_24khz = audio_processor.convert_sample_rate(audio_data, 16000, 24000)
+            
+            # Log audio info every 50 chunks to avoid spam
+            if hasattr(self, '_audio_chunk_count'):
+                self._audio_chunk_count += 1
+            else:
+                self._audio_chunk_count = 1
+                
+            if self._audio_chunk_count % 50 == 0:
+                logger.debug(f"Processing audio chunk #{self._audio_chunk_count} from {esp32_id}: {len(audio_data)} bytes")
+            
+            # Send to OpenAI Realtime API - this enables conversation!
+            self.realtime_manager.send_audio(esp32_id, audio_24khz)
+            
+            # Update activity
+            session = await self.cache_manager.get_session(esp32_id)
+            if session:
+                session['last_activity'] = datetime.utcnow().isoformat()
+                await self.cache_manager.set_session(esp32_id, session)
+                
+        except Exception as e:
+            logger.error(f"Error in _process_audio_data for {esp32_id}: {e}")
                 
     async def handle_text_from_esp32(self, esp32_id: str, message: Dict[str, Any]):
         """Handle text messages from ESP32"""
