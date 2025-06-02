@@ -1,0 +1,63 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.venv/
+venv/
+env/
+.env
+
+# Development files
+.git
+.gitignore
+*.md
+README.md
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+testing/
+*.test
+coverage/
+
+# Logs
+*.log
+logs/
+
+# Database files (will be created in container)
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+
+# Firebase (will be mounted)
+firebase-credentials.json
+
+# Data directories (will be mounted as volumes)
+data/
+backups/
+monitoring/

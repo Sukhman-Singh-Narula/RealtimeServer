@@ -1,0 +1,37 @@
+# Development override for docker-compose.yml
+
+services:
+  app:
+    # Override for development
+    volumes:
+      # Mount source code for live reload
+      - ./app:/app/app:ro
+      - ./firebase_content.py:/app/firebase_content.py:ro
+      # Persistent data storage
+      - app_data:/app/data
+      - app_logs:/app/logs
+      # Firebase credentials
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+    environment:
+      # Enable debug mode
+      - LOG_LEVEL=DEBUG
+    # Enable auto-reload in development
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Optional: Development database viewer
+  db-viewer:
+    image: coleifer/sqlite-web:latest
+    container_name: esp32_db_viewer
+    ports:
+      - "8080:8080"
+    volumes:
+      - app_data:/data:ro
+    command: sqlite_web -H 0.0.0.0 -p 8080 /data/database.db
+    depends_on:
+      - app
+    networks:
+      - esp32_network
+
+volumes:
+  app_data:
+  app_logs:
