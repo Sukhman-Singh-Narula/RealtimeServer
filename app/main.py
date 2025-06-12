@@ -84,7 +84,7 @@ app.include_router(api_router)
 app.dependency_overrides[get_managers] = get_managers
 
 # WebSocket endpoint
-@app.websocket("/ws/{esp32_id}")
+@app.websocket("/upload/{esp32_id}")
 async def websocket_endpoint(websocket: WebSocket, esp32_id: str):
     """Main WebSocket endpoint for ESP32 connections"""
     handler = WebSocketHandler(managers)
