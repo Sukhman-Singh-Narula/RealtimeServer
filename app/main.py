@@ -14,6 +14,9 @@ from app.managers.content_manager import ContentManager
 from app.managers.realtime_manager import RealtimeManager
 from app.managers.websocket_manager import WebSocketManager
 from app.api.endpoints import router as api_router
+from app.api.profile_endpoints import profile_router as profile_api_router
+
+
 from app.api.websocket_handler import WebSocketHandler
 
 # Configure logging
@@ -78,6 +81,7 @@ async def get_managers():
     return managers
 
 # Include API routes with dependency injection
+app.include_router(profile_api_router)
 app.include_router(api_router)
 
 # Override the dependency in the router
