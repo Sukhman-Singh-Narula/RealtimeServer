@@ -1,8 +1,7 @@
-# app/managers/database_manager.py - Fixed version without DailyActivity import
-
+# app/managers/enhanced_database_manager.py
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, update, func, desc, and_
+from sqlalchemy import select, update, func, desc
 from app.models.database import User, UserProgress, LearningSession
 from app.models.schemas import UserCreate
 from typing import Optional, List, Dict, Any
@@ -13,7 +12,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class DatabaseManager:
+class EnhancedDatabaseManager:
     def __init__(self, database_url: str):
         self.engine = create_async_engine(database_url, echo=False)
         self.async_session = sessionmaker(
@@ -23,31 +22,21 @@ class DatabaseManager:
     async def get_or_create_user(self, esp32_id: str) -> User:
         """Get or create user with enhanced tracking"""
         async with self.async_session() as session:
-            # First try to get existing user
             result = await session.execute(
                 select(User).where(User.esp32_id == esp32_id)
             )
             user = result.scalars().first()
             
             if not user:
-                # Create new user with all required fields
                 user = User(
                     id=str(uuid.uuid4()),
-                    esp32_id=esp32_id,
-                    current_language="spanish",
-                    current_season=1,
-                    current_episode=1,
-                    total_conversation_time=0,
-                    total_words_learned=0,
-                    total_topics_learned=0,
-                    total_episodes_completed=0
+                    esp32_id=esp32_id
                 )
                 session.add(user)
                 await session.commit()
                 await session.refresh(user)
                 logger.info(f"Created new user for ESP32 {esp32_id}: {user.id}")
             else:
-                # Update last active time
                 user.last_active = datetime.utcnow()
                 await session.commit()
                 logger.debug(f"Updated last_active for user {user.id}")
@@ -95,14 +84,7 @@ class DatabaseManager:
                 if progress.completed:
                     by_language[lang]['completed_episodes'] += 1
                 
-                # Handle vocabulary_learned which might be JSON or None
-                vocab_learned = getattr(progress, 'vocabulary_learned', None) or []
-                if isinstance(vocab_learned, str):
-                    try:
-                        vocab_learned = json.loads(vocab_learned)
-                    except:
-                        vocab_learned = []
-                vocab_count = len(vocab_learned)
+                vocab_count = len(progress.vocabulary_learned or [])
                 by_language[lang]['vocabulary_learned'] += vocab_count
                 total_vocabulary += vocab_count
             
@@ -131,10 +113,8 @@ class DatabaseManager:
             result = await session.execute(
                 select(UserProgress)
                 .where(
-                    and_(
-                        UserProgress.user_id == user_id,
-                        UserProgress.completed_at >= since_date
-                    )
+                    UserProgress.user_id == user_id,
+                    UserProgress.completed_at >= since_date
                 )
                 .order_by(desc(UserProgress.completed_at))
                 .limit(10)
@@ -144,13 +124,13 @@ class DatabaseManager:
             
             return [
                 {
-                    'date': p.completed_at.isoformat() if p.completed_at else None,
+                    'date': p.completed_at.isoformat(),
                     'language': p.language,
                     'season': p.season,
                     'episode': p.episode,
-                    'vocabulary_learned': len(getattr(p, 'vocabulary_learned', []) or [])
+                    'vocabulary_learned': len(p.vocabulary_learned or [])
                 }
-                for p in recent_progress if p.completed_at
+                for p in recent_progress
             ]
     
     async def update_progress(self, user_id: str, language: str, 
@@ -159,12 +139,10 @@ class DatabaseManager:
         async with self.async_session() as session:
             result = await session.execute(
                 select(UserProgress).where(
-                    and_(
-                        UserProgress.user_id == user_id,
-                        UserProgress.language == language,
-                        UserProgress.season == season,
-                        UserProgress.episode == episode
-                    )
+                    UserProgress.user_id == user_id,
+                    UserProgress.language == language,
+                    UserProgress.season == season,
+                    UserProgress.episode == episode
                 )
             )
             progress = result.scalars().first()
@@ -187,17 +165,7 @@ class DatabaseManager:
             if progress_data.get("completed", False):
                 progress.completed = True
                 progress.completed_at = datetime.utcnow()
-                
-                # Handle vocabulary learned
-                words_learned = progress_data.get("words_learned", [])
-                if hasattr(progress, 'vocabulary_learned'):
-                    progress.vocabulary_learned = json.dumps(words_learned) if isinstance(words_learned, list) else words_learned
-            
-            # Update other metrics if available
-            if hasattr(progress, 'completion_time'):
-                progress.completion_time = progress_data.get("completion_time", 0)
-            if hasattr(progress, 'attempts'):
-                progress.attempts = progress_data.get("attempts", 1)
+                progress.vocabulary_learned = progress_data.get("words_learned", [])
             
             await session.commit()
             await session.refresh(progress)
@@ -211,13 +179,6 @@ class DatabaseManager:
                 user_id=user_id,
                 episode_info=episode_info
             )
-            
-            # Set episode details if available
-            if hasattr(learning_session, 'language'):
-                learning_session.language = episode_info.get('language')
-                learning_session.season = episode_info.get('season')
-                learning_session.episode = episode_info.get('episode')
-            
             session.add(learning_session)
             await session.commit()
             await session.refresh(learning_session)
@@ -249,11 +210,6 @@ class DatabaseManager:
                 learning_session.duration = int(
                     (learning_session.ended_at - learning_session.created_at).total_seconds()
                 )
-                
-                # Update completion status if available
-                if hasattr(learning_session, 'completion_status'):
-                    learning_session.completion_status = "completed"
-                
                 await session.commit()
                 logger.info(f"Ended learning session {session_id} with duration {learning_session.duration}s")
     
@@ -284,10 +240,8 @@ class DatabaseManager:
             result = await session.execute(
                 select(LearningSession)
                 .where(
-                    and_(
-                        LearningSession.user_id == user_id,
-                        LearningSession.created_at >= since_date
-                    )
+                    LearningSession.user_id == user_id,
+                    LearningSession.created_at >= since_date
                 )
                 .order_by(desc(LearningSession.created_at))
             )
@@ -315,12 +269,12 @@ class DatabaseManager:
         async with self.async_session() as session:
             since_date = datetime.utcnow() - timedelta(days=days)
             
-            # Base query for sessions
-            session_query = select(LearningSession).where(LearningSession.created_at >= since_date)
+            # Base query
+            query = select(LearningSession).where(LearningSession.created_at >= since_date)
             if user_id:
-                session_query = session_query.where(LearningSession.user_id == user_id)
+                query = query.where(LearningSession.user_id == user_id)
             
-            result = await session.execute(session_query.order_by(desc(LearningSession.created_at)))
+            result = await session.execute(query.order_by(desc(LearningSession.created_at)))
             sessions = result.scalars().all()
             
             # Calculate analytics
@@ -330,26 +284,21 @@ class DatabaseManager:
             
             # User engagement
             user_sessions = {}
-            for session_obj in sessions:
-                uid = session_obj.user_id
+            for session in sessions:
+                uid = session.user_id
                 if uid not in user_sessions:
                     user_sessions[uid] = {'sessions': 0, 'duration': 0, 'interactions': 0}
                 user_sessions[uid]['sessions'] += 1
-                user_sessions[uid]['duration'] += session_obj.duration or 0
-                user_sessions[uid]['interactions'] += session_obj.interaction_count
+                user_sessions[uid]['duration'] += session.duration or 0
+                user_sessions[uid]['interactions'] += session.interaction_count
             
             # Language popularity
             language_stats = {}
-            for session_obj in sessions:
-                if session_obj.episode_info and 'language' in session_obj.episode_info:
-                    lang = session_obj.episode_info['language']
+            for session in sessions:
+                if session.episode_info and 'language' in session.episode_info:
+                    lang = session.episode_info['language']
                     if lang not in language_stats:
-                        language_stats[lang] = {'sessions': 0}
-                    language_stats[lang]['sessions'] += 1
-                elif hasattr(session_obj, 'language') and session_obj.language:
-                    lang = session_obj.language
-                    if lang not in language_stats:
-                        language_stats[lang] = {'sessions': 0}
+                        language_stats[lang] = {'sessions': 0, 'completion_rate': 0}
                     language_stats[lang]['sessions'] += 1
             
             return {
@@ -399,93 +348,46 @@ class DatabaseManager:
         async with self.async_session() as session:
             if metric == 'vocabulary':
                 # Get users with most vocabulary learned
-                # Note: This is a simplified version as vocabulary is stored as JSON
                 result = await session.execute(
-                    select(User.esp32_id, User.total_words_learned)
-                    .where(User.total_words_learned > 0)
-                    .order_by(desc(User.total_words_learned))
+                    select(User.esp32_id, func.sum(
+                        func.json_array_length(UserProgress.vocabulary_learned)
+                    ).label('total_vocabulary'))
+                    .join(UserProgress, User.id == UserProgress.user_id)
+                    .where(UserProgress.vocabulary_learned.isnot(None))
+                    .group_by(User.id, User.esp32_id)
+                    .order_by(desc('total_vocabulary'))
                     .limit(limit)
                 )
-                
-                leaderboard = []
-                for i, row in enumerate(result):
-                    leaderboard.append({
-                        'rank': i + 1,
-                        'esp32_id': row.esp32_id,
-                        'value': row.total_words_learned or 0
-                    })
-                
             elif metric == 'episodes':
                 # Get users with most episodes completed
                 result = await session.execute(
-                    select(User.esp32_id, User.total_episodes_completed)
-                    .where(User.total_episodes_completed > 0)
-                    .order_by(desc(User.total_episodes_completed))
+                    select(User.esp32_id, func.count(UserProgress.id).label('episodes_completed'))
+                    .join(UserProgress, User.id == UserProgress.user_id)
+                    .where(UserProgress.completed == True)
+                    .group_by(User.id, User.esp32_id)
+                    .order_by(desc('episodes_completed'))
                     .limit(limit)
                 )
-                
-                leaderboard = []
-                for i, row in enumerate(result):
-                    leaderboard.append({
-                        'rank': i + 1,
-                        'esp32_id': row.esp32_id,
-                        'value': row.total_episodes_completed or 0
-                    })
-                
             elif metric == 'duration':
                 # Get users with most learning time
                 result = await session.execute(
-                    select(User.esp32_id, User.total_conversation_time)
-                    .where(User.total_conversation_time > 0)
-                    .order_by(desc(User.total_conversation_time))
+                    select(User.esp32_id, func.sum(LearningSession.duration).label('total_duration'))
+                    .join(LearningSession, User.id == LearningSession.user_id)
+                    .where(LearningSession.duration.isnot(None))
+                    .group_by(User.id, User.esp32_id)
+                    .order_by(desc('total_duration'))
                     .limit(limit)
                 )
-                
-                leaderboard = []
-                for i, row in enumerate(result):
-                    leaderboard.append({
-                        'rank': i + 1,
-                        'esp32_id': row.esp32_id,
-                        'value': row.total_conversation_time or 0
-                    })
             else:
                 return []
             
-            return leaderboard
-    
-    async def get_user_learning_analytics(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get detailed learning analytics for a specific user"""
-        try:
-            # Get user
-            async with self.async_session() as session:
-                result = await session.execute(
-                    select(User).where(User.id == user_id)
-                )
-                user = result.scalars().first()
-                
-                if not user:
-                    return None
-                
-                # Get progress
-                progress_summary = await self.get_user_progress_summary(user_id)
-                
-                # Get recent sessions
-                recent_sessions = await self.get_user_metrics(user_id, datetime.utcnow() - timedelta(days=30))
-                
-                return {
-                    'user_id': user_id,
-                    'esp32_id': user.esp32_id,
-                    'total_episodes': progress_summary['summary']['total_episodes'],
-                    'completed_episodes': progress_summary['summary']['completed_episodes'],
-                    'completion_rate': progress_summary['summary']['overall_completion_rate'],
-                    'total_vocabulary_learned': progress_summary['summary']['total_vocabulary_learned'],
-                    'by_language': progress_summary['by_language'],
-                    'recent_sessions': len(recent_sessions),
-                    'total_conversation_time': getattr(user, 'total_conversation_time', 0),
-                    'current_streak_days': getattr(user, 'current_streak_days', 0),
-                    'longest_streak_days': getattr(user, 'longest_streak_days', 0)
+            leaderboard = []
+            for i, row in enumerate(result):
+                entry = {
+                    'rank': i + 1,
+                    'esp32_id': row.esp32_id,
+                    'value': getattr(row, list(row._asdict().keys())[1])
                 }
-                
-        except Exception as e:
-            logger.error(f"Error getting user learning analytics: {e}")
-            return None
+                leaderboard.append(entry)
+            
+            return leaderboard

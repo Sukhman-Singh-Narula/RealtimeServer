@@ -1,551 +1,287 @@
-#!/usr/bin/env python3
-"""
-ESP32 Language Learning - Simplified System Test
-
-Tests the simplified system where:
-1. Prompts are stored in Firebase
-2. Only name and age are templated into prompts
-3. No dynamic prompt generation
-4. Simple episode progression
-
-Usage:
-    python simplified_system_test.py [command] [options]
-
-Commands:
-    test-profiles       Test user profile management
-    test-prompts        Test prompt personalization  
-    test-episodes       Test episode flow
-    test-full-flow     Test complete learning flow
-    setup-demo-user     Setup a demo user profile
-"""
-
 import asyncio
-import json
-import logging
-import argparse
-import httpx
 import websockets
+import json
+import base64
+import logging
 from datetime import datetime
-from typing import Dict, Any, List
+import numpy as np
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-class SimplifiedSystemTester:
-    """Test the simplified prompt system"""
-    
-    def __init__(self, base_url: str = "http://localhost:8000", ws_url: str = "ws://localhost:8000"):
-        self.base_url = base_url
-        self.ws_url = ws_url
-        self.test_device = "TEST_SIMPLIFIED_001"
+class TestESP32Client:
+    def __init__(self, esp32_id="TEST_DEVICE_001"):
+        self.esp32_id = esp32_id
+        # Fix URI to match your actual WebSocket endpoint
+        self.uri = f"ws://localhost:8000/upload/{esp32_id}"
+        self.websocket = None
+        self.conversation_active = False
         
-    async def test_user_profiles(self) -> Dict[str, Any]:
-        """Test user profile management system"""
-        logger.info("🧪 Testing user profile management...")
-        
-        async with httpx.AsyncClient() as client:
-            results = {
-                "setup_questions": False,
-                "create_profile": False,
-                "get_profile": False,
-                "update_profile": False,
-                "personalization_context": False
-            }
-            
-            try:
-                # 1. Test setup questions
-                logger.info("  📋 Testing setup questions...")
-                response = await client.get(f"{self.base_url}/api/profiles/setup-questions")
-                if response.status_code == 200:
-                    questions = response.json()
-                    logger.info(f"     ✅ Got {len(questions)} setup questions")
-                    results["setup_questions"] = True
-                    
-                    # Print sample questions
-                    for q in questions[:2]:
-                        logger.info(f"     Q: {q['question']} (type: {q['type']})")
-                else:
-                    logger.error(f"     ❌ Failed to get setup questions: {response.status_code}")
-                
-                # 2. Test creating a profile
-                logger.info("  👤 Testing profile creation...")
-                profile_data = {
-                    "name": "Sofia",
-                    "age": 7,
-                    "preferred_language": "spanish",
-                    "learning_style": "visual"
-                }
-                
-                response = await client.post(
-                    f"{self.base_url}/api/profiles/{self.test_device}",
-                    json=profile_data
-                )
-                
-                if response.status_code == 200:
-                    profile = response.json()
-                    logger.info(f"     ✅ Created profile: {profile['name']}, age {profile['age']}")
-                    results["create_profile"] = True
-                else:
-                    logger.error(f"     ❌ Failed to create profile: {response.status_code}")
-                
-                # 3. Test getting profile
-                logger.info("  📖 Testing profile retrieval...")
-                response = await client.get(f"{self.base_url}/api/profiles/{self.test_device}")
-                
-                if response.status_code == 200:
-                    profile = response.json()
-                    logger.info(f"     ✅ Retrieved profile: {profile['name']}, age {profile['age']}")
-                    results["get_profile"] = True
-                else:
-                    logger.error(f"     ❌ Failed to get profile: {response.status_code}")
-                
-                # 4. Test updating profile
-                logger.info("  ✏️ Testing profile update...")
-                update_data = {"age": 8}
-                
-                response = await client.put(
-                    f"{self.base_url}/api/profiles/{self.test_device}",
-                    json=update_data
-                )
-                
-                if response.status_code == 200:
-                    profile = response.json()
-                    logger.info(f"     ✅ Updated profile: age now {profile['age']}")
-                    results["update_profile"] = True
-                else:
-                    logger.error(f"     ❌ Failed to update profile: {response.status_code}")
-                
-                # 5. Test personalization context
-                logger.info("  🎯 Testing personalization context...")
-                response = await client.get(f"{self.base_url}/api/profiles/{self.test_device}/personalization-context")
-                
-                if response.status_code == 200:
-                    context = response.json()
-                    logger.info(f"     ✅ Got context: {context['user_name']}, age {context['user_age']}")
-                    results["personalization_context"] = True
-                else:
-                    logger.error(f"     ❌ Failed to get context: {response.status_code}")
-                
-            except Exception as e:
-                logger.error(f"Error in profile testing: {e}")
-        
-        success_count = sum(results.values())
-        logger.info(f"📊 Profile tests: {success_count}/5 passed")
-        
-        return {
-            "success": success_count == 5,
-            "details": results,
-            "passed": success_count,
-            "total": 5
-        }
-    
-    async def test_prompt_personalization(self) -> Dict[str, Any]:
-        """Test prompt personalization with user data"""
-        logger.info("🧪 Testing prompt personalization...")
-        
-        async with httpx.AsyncClient() as client:
-            results = {
-                "firebase_prompts": False,
-                "personalization_applied": False,
-                "template_variables": False
-            }
-            
-            try:
-                # First ensure we have a profile
-                await self._ensure_test_profile(client)
-                
-                # Test getting personalized prompts for an episode
-                logger.info("  📝 Testing prompt personalization...")
-                response = await client.get(
-                    f"{self.base_url}/api/profiles/{self.test_device}/test-prompts/spanish/1/1"
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Check if we have original prompts from Firebase
-                    original_choice = data.get('original_prompts', {}).get('choice_agent_prompt', '')
-                    if original_choice and '{user_name}' in original_choice:
-                        logger.info("     ✅ Firebase prompts contain template variables")
-                        results["firebase_prompts"] = True
-                    
-                    # Check if personalization was applied
-                    personalized_choice = data.get('personalized_prompts', {}).get('choice_agent_prompt', '')
-                    if personalized_choice and '{user_name}' not in personalized_choice:
-                        logger.info("     ✅ Template variables were replaced")
-                        results["personalization_applied"] = True
-                        
-                        # Show example of personalization
-                        context = data.get('personalization_context', {})
-                        logger.info(f"     📋 Context: {context['user_name']}, age {context['user_age']}")
-                        
-                        # Show snippet of personalized prompt
-                        snippet = personalized_choice[:100] + "..." if len(personalized_choice) > 100 else personalized_choice
-                        logger.info(f"     💬 Snippet: {snippet}")
-                    
-                    # Check template variables
-                    if data.get('personalization_context'):
-                        context = data['personalization_context']
-                        required_vars = ['user_name', 'user_age']
-                        has_all_vars = all(var in context for var in required_vars)
-                        if has_all_vars:
-                            logger.info(f"     ✅ All required template variables present")
-                            results["template_variables"] = True
-                
-                else:
-                    logger.error(f"     ❌ Failed to get personalized prompts: {response.status_code}")
-                
-            except Exception as e:
-                logger.error(f"Error in prompt testing: {e}")
-        
-        success_count = sum(results.values())
-        logger.info(f"📊 Prompt tests: {success_count}/3 passed")
-        
-        return {
-            "success": success_count == 3,
-            "details": results,
-            "passed": success_count,
-            "total": 3
-        }
-    
-    async def test_episode_flow(self) -> Dict[str, Any]:
-        """Test the simplified episode flow"""
-        logger.info("🧪 Testing episode flow...")
-        
-        async with httpx.AsyncClient() as client:
-            results = {
-                "next_episode_fetch": False,
-                "choice_agent_ready": False,
-                "episode_agent_ready": False
-            }
-            
-            try:
-                # Ensure test profile
-                await self._ensure_test_profile(client)
-                
-                # 1. Test getting next episode
-                logger.info("  🎯 Testing next episode retrieval...")
-                response = await client.get(
-                    f"{self.base_url}/api/profiles/{self.test_device}/next-episode-with-prompts"
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    episode = data.get('episode', {})
-                    
-                    if episode and data.get('personalization_applied'):
-                        logger.info(f"     ✅ Next episode: {episode.get('title')} (S{episode.get('season')}E{episode.get('episode')})")
-                        results["next_episode_fetch"] = True
-                        
-                        # Check if choice agent prompt is ready
-                        if 'choice_agent_prompt' in episode:
-                            choice_prompt = episode['choice_agent_prompt']
-                            # Should not contain template variables after personalization
-                            if '{user_name}' not in choice_prompt and '{user_age}' not in choice_prompt:
-                                logger.info("     ✅ Choice agent prompt personalized")
-                                results["choice_agent_ready"] = True
-                            else:
-                                logger.warning("     ⚠️ Choice agent prompt still has template variables")
-                        
-                        # Check if episode agent prompt is ready
-                        if 'episode_agent_prompt' in episode:
-                            episode_prompt = episode['episode_agent_prompt']
-                            if '{user_name}' not in episode_prompt and '{user_age}' not in episode_prompt:
-                                logger.info("     ✅ Episode agent prompt personalized")
-                                results["episode_agent_ready"] = True
-                            else:
-                                logger.warning("     ⚠️ Episode agent prompt still has template variables")
-                else:
-                    logger.error(f"     ❌ Failed to get next episode: {response.status_code}")
-                
-            except Exception as e:
-                logger.error(f"Error in episode flow testing: {e}")
-        
-        success_count = sum(results.values())
-        logger.info(f"📊 Episode flow tests: {success_count}/3 passed")
-        
-        return {
-            "success": success_count == 3,
-            "details": results,
-            "passed": success_count,
-            "total": 3
-        }
-    
-    async def test_full_learning_flow(self) -> Dict[str, Any]:
-        """Test the complete learning flow with WebSocket"""
-        logger.info("🧪 Testing full learning flow...")
-        
-        results = {
-            "websocket_connection": False,
-            "choice_agent_start": False,
-            "episode_transition": False,
-            "learning_completion": False
-        }
-        
+    async def connect(self):
+        """Connect to the server"""
+        logger.info(f"Connecting to {self.uri}")
         try:
-            # Ensure test profile
-            async with httpx.AsyncClient() as client:
-                await self._ensure_test_profile(client)
-            
-            # Test WebSocket connection with simplified system
-            logger.info("  🔌 Testing WebSocket connection...")
-            uri = f"{self.ws_url}/upload/{self.test_device}"
-            
-            async with websockets.connect(uri, timeout=15) as websocket:
-                logger.info("     ✅ WebSocket connected")
-                results["websocket_connection"] = True
-                
-                # Wait for welcome message
-                try:
-                    welcome_msg = await asyncio.wait_for(websocket.recv(), timeout=10)
-                    welcome_data = json.loads(welcome_msg)
-                    
-                    if welcome_data.get('type') == 'connected':
-                        logger.info(f"     ✅ Welcome message: {welcome_data.get('message', '')[:50]}...")
-                        next_episode = welcome_data.get('next_episode', {})
-                        if next_episode:
-                            logger.info(f"     📚 Next episode ready: {next_episode.get('title')}")
-                            results["choice_agent_start"] = True
-                    
-                except asyncio.TimeoutError:
-                    logger.warning("     ⚠️ No welcome message received")
-                
-                # Send a simple interaction to test the choice agent
-                logger.info("  💬 Testing choice agent interaction...")
-                test_message = {
-                    "type": "text",
-                    "text": "I'm feeling great today! I'm ready to learn Spanish!",
-                    "esp32_id": self.test_device
-                }
-                
-                await websocket.send(json.dumps(test_message))
-                
-                # Listen for responses
-                response_count = 0
-                agent_responses = []
-                
-                try:
-                    while response_count < 5:  # Listen for up to 5 responses
-                        response = await asyncio.wait_for(websocket.recv(), timeout=5)
-                        response_data = json.loads(response)
-                        agent_responses.append(response_data)
-                        response_count += 1
-                        
-                        msg_type = response_data.get('type')
-                        logger.info(f"     📨 Received: {msg_type}")
-                        
-                        # Check for agent transitions
-                        if msg_type == 'agent_switched':
-                            new_agent = response_data.get('new_agent')
-                            if new_agent == 'episode':
-                                logger.info("     ✅ Transitioned to episode agent")
-                                results["episode_transition"] = True
-                        
-                        # Check for learning progress
-                        if msg_type == 'response_complete':
-                            session_stats = response_data.get('session_stats', {})
-                            if session_stats.get('words_learned_this_session', 0) > 0:
-                                logger.info("     ✅ Learning progress detected")
-                                results["learning_completion"] = True
-                
-                except asyncio.TimeoutError:
-                    logger.info("     ⏰ Response timeout (expected)")
-                
-                logger.info(f"     📊 Collected {len(agent_responses)} responses")
-                
+            self.websocket = await websockets.connect(self.uri)
+            logger.info("Connected successfully")
         except Exception as e:
-            logger.error(f"Error in full flow testing: {e}")
+            logger.error(f"Failed to connect: {e}")
+            raise
         
-        success_count = sum(results.values())
-        logger.info(f"📊 Full flow tests: {success_count}/4 passed")
-        
-        return {
-            "success": success_count >= 2,  # At least connection and choice agent
-            "details": results,
-            "passed": success_count,
-            "total": 4
+    async def send_text_message(self, text):
+        """Send a text message to the server"""
+        message = {
+            "type": "text",
+            "text": text
         }
-    
-    async def setup_demo_user(self, name: str = "Sofia", age: int = 7) -> Dict[str, Any]:
-        """Setup a demo user profile for testing"""
-        logger.info(f"👤 Setting up demo user: {name}, age {age}")
+        await self.websocket.send(json.dumps(message))
+        logger.info(f"Sent text: {text}")
         
-        async with httpx.AsyncClient() as client:
-            try:
-                profile_data = {
-                    "name": name,
-                    "age": age,
-                    "preferred_language": "spanish",
-                    "learning_style": "visual"
-                }
-                
-                response = await client.post(
-                    f"{self.base_url}/api/profiles/{self.test_device}",
-                    json=profile_data
-                )
-                
-                if response.status_code == 200:
-                    profile = response.json()
-                    logger.info(f"✅ Demo user created: {profile['name']}, age {profile['age']}")
-                    
-                    # Test the personalization
-                    response = await client.get(
-                        f"{self.base_url}/api/profiles/{self.test_device}/test-prompts/spanish/1/1"
-                    )
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        prompt_snippet = data.get('personalized_prompts', {}).get('choice_agent_prompt', '')[:150]
-                        logger.info(f"📝 Prompt preview: {prompt_snippet}...")
-                    
-                    return {
-                        "success": True,
-                        "profile": profile,
-                        "device_id": self.test_device
-                    }
-                else:
-                    logger.error(f"❌ Failed to create demo user: {response.status_code}")
-                    return {"success": False, "error": f"HTTP {response.status_code}"}
-                    
-            except Exception as e:
-                logger.error(f"❌ Error setting up demo user: {e}")
-                return {"success": False, "error": str(e)}
-    
-    async def _ensure_test_profile(self, client: httpx.AsyncClient):
-        """Ensure test profile exists"""
+    async def generate_test_audio(self, frequency=440, duration=2.0, sample_rate=16000):
+        """Generate test audio (sine wave) instead of silence"""
+        samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, samples, False)
+        # Generate a sine wave
+        wave = np.sin(frequency * 2 * np.pi * t)
+        # Convert to 16-bit PCM
+        audio_data = (wave * 32767).astype(np.int16)
+        return audio_data.tobytes()
+        
+    async def send_binary_audio(self, duration_seconds=2):
+        """Send test audio as binary data"""
+        logger.info(f"Generating and sending {duration_seconds} seconds of test audio...")
+        
+        # Generate test audio
+        audio_bytes = await self.generate_test_audio(frequency=440, duration=duration_seconds)
+        
+        # Send as binary WebSocket message
+        await self.websocket.send(audio_bytes)
+        logger.info(f"Sent binary audio: {len(audio_bytes)} bytes")
+        
+    async def send_hex_audio(self, duration_seconds=2):
+        """Send test audio as hex-encoded JSON message"""
+        logger.info(f"Generating and sending {duration_seconds} seconds of hex audio...")
+        
+        # Generate test audio
+        audio_bytes = await self.generate_test_audio(frequency=440, duration=duration_seconds)
+        
+        message = {
+            "type": "audio",
+            "audio_data": audio_bytes.hex()
+        }
+        
+        await self.websocket.send(json.dumps(message))
+        logger.info(f"Sent hex audio: {len(audio_bytes)} bytes")
+        
+    async def start_conversation(self):
+        """Start conversation"""
+        message = {"type": "start_conversation"}
+        await self.websocket.send(json.dumps(message))
+        logger.info("Started conversation")
+        
+    async def end_conversation(self):
+        """End conversation"""
+        message = {"type": "end_conversation"}
+        await self.websocket.send(json.dumps(message))
+        logger.info("Ended conversation")
+        
+    async def listen_for_messages(self):
+        """Listen for messages from server"""
         try:
-            # Check if profile exists
-            response = await client.get(f"{self.base_url}/api/profiles/{self.test_device}")
-            
-            if response.status_code != 200:
-                # Create test profile
-                profile_data = {
-                    "name": "TestUser",
-                    "age": 7,
-                    "preferred_language": "spanish",
-                    "learning_style": "mixed"
-                }
-                
-                response = await client.post(
-                    f"{self.base_url}/api/profiles/{self.test_device}",
-                    json=profile_data
-                )
-                
-                if response.status_code == 200:
-                    logger.info(f"✅ Created test profile for {self.test_device}")
+            async for message in self.websocket:
+                if isinstance(message, str):
+                    # JSON message
+                    try:
+                        data = json.loads(message)
+                        await self.handle_json_message(data)
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to parse JSON: {message[:100]}")
+                elif isinstance(message, bytes):
+                    # Binary message (audio)
+                    logger.info(f"Received binary audio: {len(message)} bytes")
                 else:
-                    logger.warning(f"⚠️ Could not create test profile: {response.status_code}")
+                    logger.warning(f"Unknown message type: {type(message)}")
                     
+        except websockets.exceptions.ConnectionClosed:
+            logger.info("Connection closed by server")
         except Exception as e:
-            logger.warning(f"⚠️ Error ensuring test profile: {e}")
-    
-    async def run_all_tests(self) -> Dict[str, Any]:
-        """Run all simplified system tests"""
-        logger.info("🚀 Running all simplified system tests...")
-        logger.info("=" * 60)
+            logger.error(f"Error in message listener: {e}")
+            
+    async def handle_json_message(self, data):
+        """Handle JSON messages from server"""
+        msg_type = data.get('type', 'unknown')
         
-        test_results = {}
+        logger.info(f"Received message type: {msg_type}")
         
-        # Test categories
-        tests = [
-            ("User Profiles", self.test_user_profiles),
-            ("Prompt Personalization", self.test_prompt_personalization),
-            ("Episode Flow", self.test_episode_flow),
-            ("Full Learning Flow", self.test_full_learning_flow)
-        ]
-        
-        for test_name, test_func in tests:
-            logger.info(f"\n🧪 Running: {test_name}")
+        if msg_type == 'connected':
+            logger.info(f"Server welcome: {data.get('message', '')}")
+            self.conversation_active = True
+            
+        elif msg_type == 'audio_response':
+            audio_data = data.get('audio_data', '')
+            if audio_data:
+                try:
+                    audio_bytes = base64.b64decode(audio_data)
+                    logger.info(f"Received audio response: {len(audio_bytes)} bytes")
+                except Exception as e:
+                    logger.error(f"Failed to decode audio: {e}")
+            else:
+                logger.warning("Received empty audio response")
+                
+        elif msg_type == 'audio_start':
+            logger.info("Audio stream started from server")
+            
+        elif msg_type == 'audio_complete':
+            logger.info("Audio stream completed from server")
+            
+        elif msg_type == 'text_response':
+            text = data.get('text', '')
+            is_final = data.get('is_final', False)
+            logger.info(f"Text {'(final)' if is_final else '(partial)'}: {text}")
+            
+        elif msg_type == 'agent_switched':
+            logger.info(f"Agent switched to: {data.get('new_agent', 'unknown')}")
+            episode_info = data.get('episode_info', {})
+            if episode_info:
+                logger.info(f"Episode: {episode_info.get('title', 'Unknown')}")
+                
+        elif msg_type == 'response_complete':
+            status = data.get('status', 'unknown')
+            logger.info(f"Response completed with status: {status}")
+            
+        elif msg_type == 'error':
+            logger.error(f"Server error: {data.get('message', 'Unknown error')}")
+            
+        elif msg_type == 'heartbeat_ack':
+            logger.debug("Heartbeat acknowledged")
+            
+        else:
+            logger.debug(f"Full message: {json.dumps(data, indent=2)}")
+            
+    async def send_heartbeat(self):
+        """Send periodic heartbeat"""
+        while self.websocket and not self.websocket.closed:
+            await asyncio.sleep(30)
             try:
-                result = await test_func()
-                test_results[test_name] = result
-                status = "✅ PASSED" if result["success"] else "❌ FAILED"
-                logger.info(f"{status} - {result['passed']}/{result['total']} tests passed")
+                message = {"type": "heartbeat"}
+                await self.websocket.send(json.dumps(message))
+                logger.debug("Sent heartbeat")
             except Exception as e:
-                test_results[test_name] = {
-                    "success": False,
-                    "error": str(e),
-                    "passed": 0,
-                    "total": 1
-                }
-                logger.error(f"❌ ERROR in {test_name}: {e}")
+                logger.error(f"Failed to send heartbeat: {e}")
+                break
+                
+    async def interactive_test(self):
+        """Interactive test mode"""
+        logger.info("Interactive mode - Type commands:")
+        logger.info("  'text <message>' - Send text message")
+        logger.info("  'audio' - Send test audio")
+        logger.info("  'start' - Start conversation")
+        logger.info("  'end' - End conversation") 
+        logger.info("  'quit' - Exit")
         
-        # Calculate overall results
-        total_passed = sum(result.get('passed', 0) for result in test_results.values())
-        total_tests = sum(result.get('total', 0) for result in test_results.values())
-        overall_success = sum(1 for result in test_results.values() if result.get('success', False))
+        while True:
+            try:
+                command = input("\n> ").strip()
+                
+                if command == 'quit':
+                    break
+                elif command == 'start':
+                    await self.start_conversation()
+                elif command == 'end':
+                    await self.end_conversation()
+                elif command == 'audio':
+                    await self.send_binary_audio(2)
+                elif command.startswith('text '):
+                    message = command[5:]
+                    await self.send_text_message(message)
+                else:
+                    logger.info("Unknown command")
+                    
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                logger.error(f"Error processing command: {e}")
+                
+    async def automated_test(self):
+        """Automated test scenario"""
+        logger.info("Running automated test scenario...")
         
-        logger.info("\n" + "=" * 60)
-        logger.info("📊 SIMPLIFIED SYSTEM TEST SUMMARY")
-        logger.info(f"✅ Test Categories Passed: {overall_success}/{len(tests)}")
-        logger.info(f"✅ Individual Tests Passed: {total_passed}/{total_tests}")
-        logger.info(f"📈 Success Rate: {(total_passed / total_tests * 100):.1f}%")
+        # Wait for initial connection
+        await asyncio.sleep(2)
         
-        return {
-            "overall_success": overall_success == len(tests),
-            "categories_passed": overall_success,
-            "total_categories": len(tests),
-            "tests_passed": total_passed,
-            "total_tests": total_tests,
-            "success_rate": total_passed / total_tests if total_tests > 0 else 0,
-            "details": test_results
-        }
+        # Test 1: Send greeting text
+        await self.send_text_message("Hello, I want to learn Spanish!")
+        await asyncio.sleep(3)
+        
+        # Test 2: Send audio
+        await self.send_binary_audio(2)
+        await asyncio.sleep(2)
+        
+        # Test 3: Make episode selection
+        await self.send_text_message("I want to learn about farm animals")
+        await asyncio.sleep(5)
+        
+        # Test 4: Try to repeat vocabulary
+        await self.send_text_message("gato")
+        await asyncio.sleep(3)
+        
+        logger.info("Automated test completed")
+        
+    async def run_test(self, interactive=False):
+        """Run the test client"""
+        try:
+            # Connect to server
+            await self.connect()
+            
+            # Start heartbeat task
+            heartbeat_task = asyncio.create_task(self.send_heartbeat())
+            
+            # Start listening for messages
+            listen_task = asyncio.create_task(self.listen_for_messages())
+            
+            if interactive:
+                # Run interactive test
+                await self.interactive_test()
+            else:
+                # Run automated test
+                await self.automated_test()
+                
+                # Keep listening for a bit more
+                logger.info("Listening for final responses...")
+                await asyncio.sleep(10)
+            
+        except KeyboardInterrupt:
+            logger.info("Stopping test client...")
+        except Exception as e:
+            logger.error(f"Test failed: {e}")
+        finally:
+            # Cleanup
+            if heartbeat_task and not heartbeat_task.done():
+                heartbeat_task.cancel()
+            if listen_task and not listen_task.done():
+                listen_task.cancel()
+                
+            if self.websocket:
+                await self.websocket.close()
+                logger.info("Connection closed")
 
 async def main():
-    """Main test function"""
-    parser = argparse.ArgumentParser(description="ESP32 Language Learning Simplified System Tests")
-    parser.add_argument(
-        "command",
-        choices=["test-profiles", "test-prompts", "test-episodes", "test-full-flow", "setup-demo-user", "test-all"],
-        help="Test command to run"
-    )
-    parser.add_argument("--base-url", default="http://localhost:8000", help="Base URL for API")
-    parser.add_argument("--ws-url", default="ws://localhost:8000", help="WebSocket URL")
-    parser.add_argument("--device-id", default="TEST_SIMPLIFIED_001", help="Test device ID")
-    parser.add_argument("--name", default="Sofia", help="Demo user name")
-    parser.add_argument("--age", type=int, default=7, help="Demo user age")
-    parser.add_argument("--output", help="Output file for test results")
+    """Main function"""
+    import sys
     
-    args = parser.parse_args()
+    # Check if interactive mode requested
+    interactive = len(sys.argv) > 1 and sys.argv[1] == 'interactive'
     
-    # Create test suite
-    tester = SimplifiedSystemTester(args.base_url, args.ws_url)
-    tester.test_device = args.device_id
-    
-    logger.info("🧪 ESP32 Language Learning - Simplified System Tests")
-    logger.info("=" * 60)
-    logger.info(f"🎯 Testing simplified prompt system with Firebase storage")
-    logger.info(f"📱 Device ID: {args.device_id}")
-    logger.info(f"🌐 API URL: {args.base_url}")
-    logger.info("")
-    
-    # Run specified command
-    if args.command == "test-all":
-        results = await tester.run_all_tests()
-    elif args.command == "test-profiles":
-        results = await tester.test_user_profiles()
-    elif args.command == "test-prompts":
-        results = await tester.test_prompt_personalization()
-    elif args.command == "test-episodes":
-        results = await tester.test_episode_flow()
-    elif args.command == "test-full-flow":
-        results = await tester.test_full_learning_flow()
-    elif args.command == "setup-demo-user":
-        results = await tester.setup_demo_user(args.name, args.age)
-    
-    # Output results
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(results, f, indent=2)
-        logger.info(f"📄 Results saved to {args.output}")
-    else:
-        print("\n" + "=" * 60)
-        print("📋 DETAILED RESULTS:")
-        print(json.dumps(results, indent=2))
+    # Test with properly formatted device ID
+    client = TestESP32Client("TEST_DEVICE_001")
+    await client.run_test(interactive=interactive)
 
 if __name__ == "__main__":
+    print("ESP32 Language Learning - Test Client")
+    print("=" * 50)
+    print("Usage: python test.py [interactive]")
+    print()
     asyncio.run(main())

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Firebase
     firebase_credentials_path: str = "firebase-credentials.json"
     
-    # OpenAI
+    # OpenAI - Make this required
     openai_api_key: str
     openai_realtime_model: str = "gpt-4o-realtime-preview-2024-12-17"
     
@@ -34,9 +34,27 @@ class Settings(BaseSettings):
     # Development mode
     development_mode: bool = True
     mock_redis: bool = False  # Fallback to in-memory cache
+    mock_firebase: bool = True  # Use mock data when Firebase unavailable
+    
+    # Audio processing settings
+    audio_sample_rate: int = 16000
+    audio_chunk_size: int = 1024
+    audio_channels: int = 1
+    audio_format: str = "pcm16"
+    
+    # Conversation settings
+    conversation_timeout_seconds: int = 300  # 5 minutes
+    response_timeout_seconds: int = 30
+    max_audio_duration_seconds: int = 60
     
     class Config:
         env_file = ".env"
+        case_sensitive = False
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Ensure data directory exists
+        os.makedirs("./data", exist_ok=True)
     
     def get_redis_url(self) -> str:
         """Generate Redis URL with proper formatting"""
@@ -71,5 +89,21 @@ class Settings(BaseSettings):
                 hosts.append("0.0.0.0")
                 
         return list(dict.fromkeys(hosts))  # Remove duplicates while preserving order
+    
+    def validate_config(self) -> List[str]:
+        """Validate configuration and return list of warnings/errors"""
+        issues = []
+        
+        if not self.openai_api_key:
+            issues.append("ERROR: OpenAI API key is required")
+        
+        if self.openai_api_key and self.openai_api_key.startswith("sk-"):
+            if len(self.openai_api_key) < 50:
+                issues.append("WARNING: OpenAI API key appears to be invalid (too short)")
+        
+        if not os.path.exists(self.firebase_credentials_path) and not self.mock_firebase:
+            issues.append(f"WARNING: Firebase credentials not found at {self.firebase_credentials_path}")
+        
+        return issues
 
 settings = Settings()
