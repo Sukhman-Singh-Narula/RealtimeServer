@@ -3,6 +3,7 @@ from firebase_admin import credentials, firestore
 from typing import List, Dict, Any, Optional
 from app.models.schemas import EpisodeContent
 import logging
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

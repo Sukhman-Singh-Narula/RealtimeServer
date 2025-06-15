@@ -479,10 +479,10 @@ def upload_episodes():
         try:
             doc_id = episode.pop('id')
             db.collection('episodes').document(doc_id).set(episode)
-            logger.info(f"✅ Created episode with prompts: {doc_id}")
+            logger.info(f"  Created episode with prompts: {doc_id}")
             success_count += 1
         except Exception as e:
-            logger.error(f"❌ Failed to create episode {episode.get('id', 'unknown')}: {e}")
+            logger.error(f" Failed to create episode {episode.get('id', 'unknown')}: {e}")
     
     logger.info(f"Successfully uploaded {success_count}/{len(spanish_episodes)} episodes")
 
@@ -513,9 +513,9 @@ def create_user_profiles():
         try:
             profile_id = profile.pop('id')
             db.collection('user_profiles').document(profile_id).set(profile)
-            logger.info(f"✅ Created user profile: {profile_id}")
+            logger.info(f"  Created user profile: {profile_id}")
         except Exception as e:
-            logger.error(f"❌ Failed to create user profile: {e}")
+            logger.error(f" Failed to create user profile: {e}")
 
 def create_curriculum_metadata():
     """Create curriculum metadata"""
@@ -553,9 +553,9 @@ def create_curriculum_metadata():
     
     try:
         db.collection('curriculum').document('metadata').set(curriculum_metadata)
-        logger.info("✅ Created curriculum metadata with prompt system info")
+        logger.info("  Created curriculum metadata with prompt system info")
     except Exception as e:
-        logger.error(f"❌ Failed to create curriculum metadata: {e}")
+        logger.error(f" Failed to create curriculum metadata: {e}")
 
 def main():
     """Main setup function"""
@@ -582,7 +582,7 @@ def main():
         logger.info("👤 User profiles: Sample profiles for testing")
         logger.info("🎯 Personalization: Name and age templating")
         logger.info("📱 System: Simplified prompt fetching from Firebase")
-        logger.info("✅ Setup complete - ready for testing!")
+        logger.info("  Setup complete - ready for testing!")
         
         logger.info("\n🧪 TESTING INSTRUCTIONS:")
         logger.info("========================")
@@ -593,7 +593,7 @@ def main():
         logger.info("5. User name and age will be templated into the prompts")
         
     except Exception as e:
-        logger.error(f"❌ Setup failed: {e}")
+        logger.error(f" Setup failed: {e}")
 
 if __name__ == "__main__":
     main()

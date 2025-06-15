@@ -43,10 +43,10 @@ class SystemRunner:
             import pydantic_settings
             import sqlalchemy
             import redis
-            logger.info("✅ All required dependencies found")
+            logger.info("  All required dependencies found")
             return True
         except ImportError as e:
-            logger.error(f"❌ Missing dependency: {e}")
+            logger.error(f"  Missing dependency: {e}")
             logger.info("Run: pip install -r requirements.txt")
             return False
     
@@ -67,11 +67,11 @@ class SystemRunner:
             if has_errors:
                 return False
                 
-            logger.info("✅ Configuration validated")
+            logger.info("  Configuration validated")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Configuration error: {e}")
+            logger.error(f"  Configuration error: {e}")
             return False
     
     def start_server(self):
@@ -106,7 +106,7 @@ class SystemRunner:
                         
                         # Check for successful startup
                         if "Uvicorn running on" in line:
-                            logger.info("✅ Server started successfully")
+                            logger.info("  Server started successfully")
                         elif "ERROR" in line or "Exception" in line:
                             logger.warning(f"Server issue: {line.strip()}")
             
@@ -120,14 +120,14 @@ class SystemRunner:
             
             # Check if server is running
             if self.server_process.poll() is None:
-                logger.info("✅ Server is running")
+                logger.info("  Server is running")
                 return True
             else:
-                logger.error("❌ Server failed to start")
+                logger.error("  Server failed to start")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Failed to start server: {e}")
+            logger.error(f"  Failed to start server: {e}")
             return False
     
     def test_server_health(self):
@@ -137,12 +137,12 @@ class SystemRunner:
             response = requests.get("http://localhost:8000/status", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                logger.info("✅ Server health check passed")
+                logger.info("  Server health check passed")
                 logger.info(f"   Status: {data.get('status')}")
                 logger.info(f"   Active connections: {data.get('active_esp32_connections')}")
                 return True
             else:
-                logger.error(f"❌ Server health check failed: {response.status_code}")
+                logger.error(f"  Server health check failed: {response.status_code}")
                 return False
         except Exception as e:
             logger.warning(f"⚠️ Health check failed (server may still be starting): {e}")
@@ -165,7 +165,7 @@ class SystemRunner:
         except KeyboardInterrupt:
             logger.info("Test client stopped by user")
         except Exception as e:
-            logger.error(f"❌ Test client error: {e}")
+            logger.error(f"  Test client error: {e}")
     
     def run_automated_test(self):
         """Run automated test scenarios"""
@@ -179,10 +179,10 @@ class SystemRunner:
                 await client.run_test(interactive=False)
             
             asyncio.run(run_automated())
-            logger.info("✅ Automated tests completed")
+            logger.info("  Automated tests completed")
             
         except Exception as e:
-            logger.error(f"❌ Automated test failed: {e}")
+            logger.error(f"  Automated test failed: {e}")
     
     def show_system_info(self):
         """Display system information"""
@@ -217,9 +217,9 @@ class SystemRunner:
                 print(f"   Cache: {data.get('cache')}")
                 print(f"   Firebase: {data.get('firebase')}")
             else:
-                print(f"❌ Failed to get status: {response.status_code}")
+                print(f"  Failed to get status: {response.status_code}")
         except Exception as e:
-            print(f"❌ Status check failed: {e}")
+            print(f"  Status check failed: {e}")
     
     def interactive_menu(self):
         """Interactive command menu"""
@@ -255,7 +255,7 @@ class SystemRunner:
             try:
                 self.server_process.terminate()
                 self.server_process.wait(timeout=5)
-                logger.info("✅ Server stopped")
+                logger.info("  Server stopped")
             except:
                 self.server_process.kill()
                 logger.info("🔪 Server force killed")
@@ -347,9 +347,9 @@ def main():
     success = runner.run(mode)
     
     if success:
-        print("\n✅ System ran successfully")
+        print("\n  System ran successfully")
     else:
-        print("\n❌ System encountered errors")
+        print("\n System encountered errors")
         sys.exit(1)
 
 if __name__ == "__main__":

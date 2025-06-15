@@ -557,13 +557,13 @@
                     }
 
                     this.isInitialized = true;
-                    logToConsole('✅ Audio system initialized successfully');
+                    logToConsole('  Audio system initialized successfully');
                     updateAudioStatus('🔊 Ready', 'Audio system initialized');
 
                     return true;
                 } catch (error) {
-                    logToConsole('❌ Failed to initialize audio: ' + error.message);
-                    updateAudioStatus('❌ Failed', error.message);
+                    logToConsole('  Failed to initialize audio: ' + error.message);
+                    updateAudioStatus('  Failed', error.message);
                     return false;
                 }
             }
@@ -576,7 +576,7 @@
                     }
 
                     if (!base64Audio || base64Audio.length === 0) {
-                        logToConsole('⚠️ Empty audio chunk received');
+                        logToConsole('Empty audio chunk received');
                         return;
                     }
 
@@ -616,7 +616,7 @@
                     }
 
                 } catch (error) {
-                    logToConsole('❌ Error processing audio chunk: ' + error.message);
+                    logToConsole('  Error processing audio chunk: ' + error.message);
                 }
             }
 
@@ -661,7 +661,7 @@
                     };
 
                     source.onerror = (error) => {
-                        logToConsole(`❌ Audio playback error for chunk ${audioChunk.chunkNumber}`);
+                        logToConsole(`  Audio playback error for chunk ${audioChunk.chunkNumber}`);
                         setTimeout(() => {
                             if (this.isPlaying) {
                                 this.playNextChunk();
@@ -673,7 +673,7 @@
                     updateStats();
 
                 } catch (error) {
-                    logToConsole('❌ Error in playNextChunk: ' + error.message);
+                    logToConsole('  Error in playNextChunk: ' + error.message);
                     setTimeout(() => {
                         if (this.isPlaying && this.audioQueue.length > 0) {
                             this.playNextChunk();
@@ -685,9 +685,9 @@
             }
 
             handleAudioComplete() {
-                logToConsole('✅ Audio response stream complete');
+                logToConsole('  Audio response stream complete');
                 logToConsole(`   Total chunks: ${this.totalChunksReceived}, bytes: ${this.totalBytesReceived}`);
-                updateAudioStatus('✅ Complete', 'AI finished speaking');
+                updateAudioStatus('  Complete', 'AI finished speaking');
             }
 
             setVolume(volume) {
@@ -778,7 +778,7 @@
                     this.connectionStartTime = Date.now();
 
                     this.ws.onopen = () => {
-                        logToConsole('✅ WebSocket connected successfully!');
+                        logToConsole('  WebSocket connected successfully!');
                         this.isConnected = true;
                         this.reconnectAttempts = 0;
                         this.reconnectDelay = 2000;
@@ -794,14 +794,14 @@
                             const data = JSON.parse(event.data);
                             await this.handleServerMessage(data);
                         } catch (error) {
-                            logToConsole('❌ Error parsing message: ' + error.message);
+                            logToConsole('  Error parsing message: ' + error.message);
                             this.messageStats.errors++;
                         }
                         updateStats();
                     };
 
                     this.ws.onerror = (error) => {
-                        logToConsole('❌ WebSocket error: ' + error);
+                        logToConsole('  WebSocket error: ' + error);
                         this.messageStats.errors++;
                         updateConnectionStatus('Error', 'disconnected');
                     };
@@ -820,14 +820,14 @@
 
                             setTimeout(() => this.connect(), delay);
                         } else {
-                            logToConsole('❌ Max reconnection attempts reached');
+                            logToConsole('  Max reconnection attempts reached');
                             updateConnectionStatus('Failed', 'disconnected');
                         }
                         updateStats();
                     };
 
                 } catch (error) {
-                    logToConsole('❌ Connection failed: ' + error.message);
+                    logToConsole('  Connection failed: ' + error.message);
                     updateConnectionStatus('Failed', 'disconnected');
                     this.messageStats.errors++;
                     updateStats();
@@ -851,7 +851,7 @@
                         break;
 
                     case 'audio_complete':
-                        logToConsole('✅ AI response complete');
+                        logToConsole('  AI response complete');
                         this.audioHandler.handleAudioComplete();
                         updateConnectionStatus('AI finished - You can respond', 'connected');
                         break;
@@ -868,7 +868,7 @@
                         break;
 
                     case 'error':
-                        logToConsole('❌ Server error: ' + data.message);
+                        logToConsole('  Server error: ' + data.message);
                         updateConnectionStatus(`Error: ${data.message}`, 'disconnected');
                         this.messageStats.errors++;
                         break;
@@ -892,7 +892,7 @@
                         updateStats();
                         return true;
                     } catch (error) {
-                        logToConsole('❌ Error sending message: ' + error.message);
+                        logToConsole('  Error sending message: ' + error.message);
                         this.messageStats.errors++;
                         updateStats();
                         return false;
@@ -1058,7 +1058,7 @@
                 document.getElementById('server-conversations').textContent =
                     data.total_conversations.toString();
                 document.getElementById('openai-status').textContent =
-                    data.openai_connected ? '✅ Connected' : '❌ Not configured';
+                    data.openai_connected ? '  Connected' : '  Not configured';
 
             } catch (error) {
                 logToConsole('⚠️ Failed to fetch server stats: ' + error.message);

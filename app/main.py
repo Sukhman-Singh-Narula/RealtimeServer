@@ -13,12 +13,13 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
+from app.config import settings
 
 # Import all managers and handlers
 from app.managers.realtime_manager import RealtimeManager
 from app.managers.content_manager import ContentManager
-from app.api.websocket_handler import WebSocketHandler
-from app.agents.agent_configs import create_choice_agent_config
+from app.managers.websocket_manager import WebSocketHandler
+from app.agents.agent_configs import get_choice_agent_config
 
 # Configure comprehensive logging
 logging.basicConfig(
@@ -30,6 +31,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+from fastapi.staticfiles import StaticFiles
+
+# Mount static files
 
 # Verify required environment variables
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY"]
@@ -44,7 +48,7 @@ app = FastAPI(
     description="AI-powered conversational teddy bear server",
     version="1.0.0"
 )
-
+app.mount("/static", StaticFiles(directory="static"), name="static")
 # Enable CORS with specific configuration
 app.add_middleware(
     CORSMiddleware,
@@ -68,16 +72,15 @@ server_state = ServerState()
 # Initialize managers with proper error handling
 try:
     realtime_manager = RealtimeManager()
-    content_manager = ContentManager()
+    content_manager = ContentManager(settings.firebase_credentials_path)
     websocket_handler = WebSocketHandler(realtime_manager, content_manager)
-    
     # Connect components
     realtime_manager.set_websocket_handler(websocket_handler)
     websocket_handler.set_server_state(server_state)
     
-    logger.info("✅ All managers initialized successfully")
+    logger.info("  All managers initialized successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to initialize managers: {e}")
+    logger.error(f"  Failed to initialize managers: {e}")
     raise
 
 # Pydantic models for API endpoints
@@ -102,43 +105,6 @@ class ServerStats(BaseModel):
     total_messages: int
     openai_connected: bool
 
-# === HEALTH CHECK ENDPOINTS ===
-
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """Root endpoint with basic server info"""
-    uptime = time.time() - server_state.server_start_time
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>StoryTeller Server</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
-            .status {{ padding: 10px; margin: 10px 0; border-radius: 5px; }}
-            .healthy {{ background-color: #d4edda; color: #155724; }}
-            .info {{ background-color: #d1ecf1; color: #0c5460; }}
-        </style>
-    </head>
-    <body>
-        <h1>🧸 StoryTeller Server</h1>
-        <div class="status healthy">✅ Server is running</div>
-        <div class="status info">⏱️ Uptime: {uptime:.2f} seconds</div>
-        <div class="status info">🔗 Active Devices: {len(server_state.active_devices)}</div>
-        <div class="status info">💬 Total Conversations: {server_state.total_conversations}</div>
-        
-        <h2>Available Endpoints:</h2>
-        <ul>
-            <li><a href="/health">/health</a> - Health check</li>
-            <li><a href="/status">/status</a> - Server status</li>
-            <li><a href="/devices">/devices</a> - Active devices</li>
-            <li><a href="/dashboard">/dashboard</a> - Dashboard</li>
-            <li><strong>WebSocket:</strong> /upload/{{device_id}} - Device connections</li>
-        </ul>
-    </body>
-    </html>
-    """
-    return html_content
 
 @app.get("/health")
 async def health_check():
@@ -284,7 +250,16 @@ async def get_available_episodes():
 async def get_next_episode(device_id: str):
     """Get next episode for device"""
     try:
-        episode = await content_manager.get_next_episode(device_id)
+        user = await self.db_manager.get_or_create_user(device_id)
+
+        user_progress = {
+            'current_language': user.current_language,
+            'current_season': user.current_season,
+            'current_episode': user.current_episode
+        }
+
+  
+        episode = await self.content_manager.get_next_episode_for_user(user.id, user_progress)
         if not episode:
             raise HTTPException(status_code=404, detail="No episodes available")
         return episode
@@ -314,7 +289,7 @@ async def websocket_endpoint(websocket: WebSocket, device_id: str):
     except WebSocketDisconnect:
         logger.info(f"🔌 Device {device_id} disconnected")
     except Exception as e:
-        logger.error(f"❌ Connection error for {device_id}: {e}")
+        logger.error(f"  Connection error for {device_id}: {e}")
     finally:
         # Cleanup
         if device_id in server_state.active_devices:
@@ -326,7 +301,7 @@ async def websocket_endpoint(websocket: WebSocket, device_id: str):
 async def dashboard_websocket(websocket: WebSocket):
     """WebSocket endpoint for dashboard real-time updates"""
     await websocket.accept()
-    logger.info("📊 Dashboard connected")
+    logger.info(" Dashboard connected")
     
     try:
         while True:
@@ -353,7 +328,7 @@ async def dashboard_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("📊 Dashboard disconnected")
     except Exception as e:
-        logger.error(f"❌ Dashboard websocket error: {e}")
+        logger.error(f"  Dashboard websocket error: {e}")
 
 # === ADMIN ENDPOINTS ===
 
@@ -398,153 +373,10 @@ async def get_recent_logs():
 
 # === DASHBOARD HTML ===
 
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/dashboard")
 async def dashboard():
-    """Simple dashboard for monitoring"""
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>StoryTeller Dashboard</title>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-            .container { max-width: 1200px; margin: 0 auto; }
-            .card { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
-            .status-card { padding: 15px; border-radius: 5px; text-align: center; }
-            .status-good { background: #d4edda; color: #155724; }
-            .status-warning { background: #fff3cd; color: #856404; }
-            .status-error { background: #f8d7da; color: #721c24; }
-            .device-list { list-style: none; padding: 0; }
-            .device-item { padding: 10px; margin: 5px 0; background: #f8f9fa; border-radius: 5px; }
-            .logs { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; font-family: monospace; height: 300px; overflow-y: auto; }
-            button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
-            .btn-primary { background: #007bff; color: white; }
-            .btn-danger { background: #dc3545; color: white; }
-            .btn-success { background: #28a745; color: white; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🧸 StoryTeller Dashboard</h1>
-            
-            <div class="status-grid">
-                <div class="status-card status-good">
-                    <h3>Server Status</h3>
-                    <p id="server-status">✅ Online</p>
-                </div>
-                <div class="status-card status-good">
-                    <h3>Active Devices</h3>
-                    <p id="active-devices">0</p>
-                </div>
-                <div class="status-card status-good">
-                    <h3>Total Conversations</h3>
-                    <p id="total-conversations">0</p>
-                </div>
-                <div class="status-card status-good">
-                    <h3>Uptime</h3>
-                    <p id="uptime">0s</p>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Connected Devices</h2>
-                <ul id="device-list" class="device-list">
-                    <li>No devices connected</li>
-                </ul>
-            </div>
-            
-            <div class="card">
-                <h2>Actions</h2>
-                <button class="btn-success" onclick="refreshData()">🔄 Refresh</button>
-                <button class="btn-primary" onclick="testConnection()">🔧 Test Connection</button>
-                <button class="btn-danger" onclick="resetServer()">⚠️ Reset Server</button>
-            </div>
-            
-            <div class="card">
-                <h2>Live Server Logs</h2>
-                <div id="logs" class="logs">Connecting to live logs...</div>
-            </div>
-        </div>
-        
-        <script>
-            let ws = null;
-            
-            function connectWebSocket() {
-                ws = new WebSocket('ws://localhost:8000/dashboard/ws');
-                
-                ws.onopen = function() {
-                    console.log('Dashboard WebSocket connected');
-                    document.getElementById('logs').innerHTML = 'Connected to live logs...\\n';
-                };
-                
-                ws.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    updateDashboard(data);
-                };
-                
-                ws.onclose = function() {
-                    console.log('Dashboard WebSocket disconnected');
-                    setTimeout(connectWebSocket, 5000);
-                };
-            }
-            
-            function updateDashboard(data) {
-                document.getElementById('active-devices').textContent = data.active_devices;
-                document.getElementById('total-conversations').textContent = data.total_conversations;
-                document.getElementById('uptime').textContent = Math.round(data.uptime) + 's';
-                
-                const deviceList = document.getElementById('device-list');
-                if (data.devices && data.devices.length > 0) {
-                    deviceList.innerHTML = data.devices.map(device => 
-                        `<li class="device-item">📱 ${device.device_id} - ${device.status} ${device.conversation_active ? '💬' : ''}</li>`
-                    ).join('');
-                } else {
-                    deviceList.innerHTML = '<li>No devices connected</li>';
-                }
-            }
-            
-            async function refreshData() {
-                try {
-                    const response = await fetch('/status');
-                    const data = await response.json();
-                    console.log('Manual refresh:', data);
-                } catch (error) {
-                    console.error('Refresh failed:', error);
-                }
-            }
-            
-            async function testConnection() {
-                try {
-                    const response = await fetch('/health');
-                    const data = await response.json();
-                    alert('Health check: ' + data.status);
-                } catch (error) {
-                    alert('Connection test failed: ' + error.message);
-                }
-            }
-            
-            async function resetServer() {
-                if (confirm('Are you sure you want to reset the server? This will disconnect all devices.')) {
-                    try {
-                        const response = await fetch('/admin/reset', { method: 'POST' });
-                        const data = await response.json();
-                        alert(data.message);
-                    } catch (error) {
-                        alert('Reset failed: ' + error.message);
-                    }
-                }
-            }
-            
-            // Start dashboard
-            connectWebSocket();
-        </script>
-    </body>
-    </html>
-    """
-    return html_content
+    """Redirect to dashboard HTML file"""
+    return FileResponse("static/dashboard.html")
 
 # === ERROR HANDLERS ===
 
@@ -562,15 +394,15 @@ async def internal_error_handler(request, exc):
 @app.on_event("startup")
 async def startup_event():
     """Server startup tasks"""
-    logger.info("🚀 StoryTeller Server starting up...")
-    logger.info(f"✅ OpenAI API Key configured: {bool(os.getenv('OPENAI_API_KEY'))}")
-    logger.info("✅ All managers initialized")
-    logger.info("🎯 Server ready to accept connections")
+    logger.info(" StoryTeller Server starting up...")
+    logger.info(f"  OpenAI API Key configured: {bool(os.getenv('OPENAI_API_KEY'))}")
+    logger.info("  All managers initialized")
+    logger.info(" Server ready to accept connections")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Server shutdown tasks"""
-    logger.info("🛑 StoryTeller Server shutting down...")
+    logger.info(" StoryTeller Server shutting down...")
     
     # Disconnect all devices gracefully
     for device_id in list(server_state.active_devices.keys()):
@@ -579,7 +411,7 @@ async def shutdown_event():
         except Exception as e:
             logger.warning(f"Error during cleanup for {device_id}: {e}")
     
-    logger.info("✅ Shutdown complete")
+    logger.info("  Shutdown complete")
 
 # === MAIN ENTRY POINT ===
 
@@ -591,7 +423,7 @@ if __name__ == "__main__":
     logger.info("🧸 STORYTELLER SERVER")
     logger.info("=" * 50)
     logger.info(f"🌐 Starting server on {host}:{port}")
-    logger.info(f"🔑 OpenAI API Key: {'✅ Configured' if os.getenv('OPENAI_API_KEY') else '❌ Missing'}")
+    logger.info(f"🔑 OpenAI API Key: {'  Configured' if os.getenv('OPENAI_API_KEY') else '  Missing'}")
     logger.info(f"📊 Dashboard: http://localhost:{port}/dashboard")
     logger.info(f"🔗 WebSocket: ws://localhost:{port}/upload/{{device_id}}")
     logger.info("=" * 50)

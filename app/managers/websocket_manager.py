@@ -8,17 +8,18 @@ from datetime import datetime
 from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
+
 logger = logging.getLogger(__name__)
 
 class WebSocketHandler:
-    def __init__(self, realtime_manager, content_manager):
-        self.realtime_manager = realtime_manager
-        self.content_manager = content_manager
+    def __init__(self, managers: Dict[str, any]):
+        self.realtime_manager = managers['realtime']
+        self.content_manager = managers['content']
+        self.db_manager = managers['database']  # Add this
+        self.cache_manager = managers['cache']  # Add this
+        self.ws_manager = managers.get('websocket', self)  # Add this
         self.active_connections: Dict[str, WebSocket] = {}
-        self.server_state = None  # Will be set by main.py
-        
-        # Set this handler in realtime manager for response forwarding
-        self.realtime_manager.set_websocket_handler(self)
+        self.server_state = None
 
     def set_server_state(self, server_state):
         """Set reference to server state for statistics tracking"""
@@ -43,7 +44,7 @@ class WebSocketHandler:
                     "last_activity": datetime.now()
                 }
             
-            logger.info(f"✅ ESP32 connection established for {device_id}")
+            logger.info(f"  ESP32 connection established for {device_id}")
 
             # Send immediate connection confirmation
             await self._send_to_device(device_id, {
@@ -62,7 +63,7 @@ class WebSocketHandler:
         except WebSocketDisconnect:
             logger.info(f"🔌 ESP32 {device_id} disconnected normally")
         except Exception as e:
-            logger.error(f"❌ Connection error for {device_id}: {e}")
+            logger.error(f"  Connection error for {device_id}: {e}")
         finally:
             connection_duration = time.time() - connection_start_time
             logger.info(f"📊 Connection {device_id} lasted {connection_duration:.2f} seconds")
@@ -100,7 +101,7 @@ class WebSocketHandler:
                 logger.info(f"🔌 ESP32 {device_id} disconnected during message loop")
                 break
             except Exception as e:
-                logger.error(f"❌ Error in message loop for {device_id}: {e}")
+                logger.error(f"  Error in message loop for {device_id}: {e}")
                 # Try to send error notification to device
                 await self._send_to_device(device_id, {
                     "type": "error",
@@ -118,9 +119,19 @@ class WebSocketHandler:
                 self.server_state.active_devices[device_id]["status"] = "initializing"
 
             # Step 1: Get next episode
-            episode_info = await self.content_manager.get_next_episode(device_id)
+            user = await self.db_manager.get_or_create_user(device_id)
+
+            # Get user progress
+            user_progress = {
+                'current_language': user.current_language,
+                'current_season': user.current_season,
+                'current_episode': user.current_episode
+            }
+
+            # Then get the next episode
+            episode_info = await self.content_manager.get_next_episode_for_user(user.id, user_progress)
             if not episode_info:
-                logger.error(f"❌ No episode found for {device_id}")
+                logger.error(f"  No episode found for {device_id}")
                 await self._send_to_device(device_id, {
                     "type": "error",
                     "message": "No episode available"
@@ -138,21 +149,21 @@ class WebSocketHandler:
             logger.info(f"🤖 Creating OpenAI Realtime connection for {device_id}")
             session_id = await self.realtime_manager.create_session(device_id)
             if not session_id:
-                logger.error(f"❌ Failed to create realtime session for {device_id}")
+                logger.error(f"  Failed to create realtime session for {device_id}")
                 await self._send_to_device(device_id, {
                     "type": "error",
                     "message": "Failed to connect to AI service"
                 })
                 return False
 
-            logger.info(f"✅ Realtime session created for {device_id}: {session_id}")
+            logger.info(f"  Realtime session created for {device_id}: {session_id}")
 
             # Step 3: Generate agent configuration
             logger.info(f"⚙️ Generating agent config for {device_id} with episode: {episode_info['name']}")
             
             # Import here to avoid circular imports
-            from app.agents.agent_configs import create_choice_agent_config
-            choice_config = create_choice_agent_config(episode_info['name'])
+            from app.agents.agent_configs import get_choice_agent_config
+            choice_config = get_choice_agent_config(episode_info['name'])
             
             logger.info(f"👤 Agent config created: {choice_config['friend']}, age {choice_config['age']}")
 
@@ -186,7 +197,7 @@ class WebSocketHandler:
                     "device_id": device_id
                 }
 
-            logger.info(f"✅ Setup complete for {device_id}. Ready for {episode_info['name']}!")
+            logger.info(f"  Setup complete for {device_id}. Ready for {episode_info['name']}!")
             
             # Send setup complete notification
             await self._send_to_device(device_id, {
@@ -198,7 +209,7 @@ class WebSocketHandler:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error in conversation workflow for {device_id}: {e}")
+            logger.error(f"  Error in conversation workflow for {device_id}: {e}")
             
             # Update device status to error
             if self.server_state and device_id in self.server_state.active_devices:
@@ -273,13 +284,13 @@ class WebSocketHandler:
                 })
 
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Invalid JSON from {device_id}: {message[:100]}...")
+            logger.error(f"  Invalid JSON from {device_id}: {message[:100]}...")
             await self._send_to_device(device_id, {
                 "type": "error",
                 "message": "Invalid JSON format"
             })
         except Exception as e:
-            logger.error(f"❌ Error handling device message from {device_id}: {e}")
+            logger.error(f"  Error handling device message from {device_id}: {e}")
             await self._send_to_device(device_id, {
                 "type": "error",
                 "message": f"Message processing error: {str(e)}"
@@ -321,7 +332,7 @@ class WebSocketHandler:
                 self.server_state.active_devices[device_id]["status"] = "connected"
 
         except Exception as e:
-            logger.error(f"❌ Error ending conversation for {device_id}: {e}")
+            logger.error(f"  Error ending conversation for {device_id}: {e}")
             await self._send_to_device(device_id, {
                 "type": "error",
                 "message": f"Error ending conversation: {str(e)}"
@@ -347,7 +358,7 @@ class WebSocketHandler:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error sending to {device_id}: {e}")
+            logger.error(f"  Error sending to {device_id}: {e}")
             await self._cleanup_connection(device_id)
             return False
 
@@ -387,10 +398,10 @@ class WebSocketHandler:
                 if device_id in self.server_state.active_devices:
                     del self.server_state.active_devices[device_id]
             
-            logger.info(f"✅ Cleanup completed for {device_id}")
+            logger.info(f"  Cleanup completed for {device_id}")
 
         except Exception as e:
-            logger.error(f"❌ Error during cleanup for {device_id}: {e}")
+            logger.error(f"  Error during cleanup for {device_id}: {e}")
 
     # Method for realtime manager to send AI responses to device
     async def send_response_to_device(self, device_id: str, response_data: dict):
@@ -424,7 +435,7 @@ class WebSocketHandler:
             return success
             
         except Exception as e:
-            logger.error(f"❌ Error sending AI response to {device_id}: {e}")
+            logger.error(f"  Error sending AI response to {device_id}: {e}")
             return False
 
     # Utility methods for server management
