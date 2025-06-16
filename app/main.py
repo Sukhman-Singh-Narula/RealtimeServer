@@ -1,9 +1,8 @@
-# File: main.py - COMPLETE SERVER WITH ALL FUNCTIONALITIES
+# app/main.py - FINAL VERSION WITH CONVERSATION FLOW SYSTEM
 
 import os
 import logging
 import asyncio
-import json
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -13,27 +12,35 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
+
+# Import configuration
 from app.config import settings
 
-# Import all managers and handlers
+# Import managers - FIXED IMPORTS
 from app.managers.realtime_manager import RealtimeManager
 from app.managers.content_manager import ContentManager
-from app.managers.websocket_manager import WebSocketHandler
-from app.agents.agent_configs import get_choice_agent_config
+from app.managers.cache_manager import CacheManager
+from app.managers.database_manager import DatabaseManager  # Use single database manager
+from app.managers.metrics_manager import MetricsManager
+from app.managers.profile_manager import UserProfileManager
 
-# Configure comprehensive logging
+# Import WebSocket handler - FIXED IMPORT
+from app.api.websocket_handler import WebSocketHandler
+
+# Import API routers
+from app.api.endpoints import router as api_router
+from app.api.profile_endpoints import profile_router
+
+# Configure logging with UTF-8 encoding to handle emojis
 logging.basicConfig(
     level=logging.INFO,
-    format='[SERVER] %(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('server.log')
+        logging.FileHandler('server.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
-from fastapi.staticfiles import StaticFiles
-
-# Mount static files
 
 # Verify required environment variables
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY"]
@@ -44,21 +51,26 @@ for var in REQUIRED_ENV_VARS:
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="StoryTeller Server",
-    description="AI-powered conversational teddy bear server",
-    version="1.0.0"
+    title="ESP32 Language Learning System",
+    description="Multi-user AI-powered language learning system with OpenAI Realtime API",
+    version="2.0.0"
 )
+
+# Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-# Enable CORS with specific configuration
+
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Global state management
+# Global managers storage
+managers: Dict[str, any] = {}
+
 class ServerState:
     def __init__(self):
         self.active_devices: Dict[str, dict] = {}
@@ -69,71 +81,111 @@ class ServerState:
 
 server_state = ServerState()
 
-# Initialize managers with proper error handling
-try:
-    realtime_manager = RealtimeManager()
-    content_manager = ContentManager(settings.firebase_credentials_path)
-    websocket_handler = WebSocketHandler(realtime_manager, content_manager)
-    # Connect components
-    realtime_manager.set_websocket_handler(websocket_handler)
-    websocket_handler.set_server_state(server_state)
+# FIXED: Proper dependency injection function
+def get_managers_instance():
+    """Get the global managers instance"""
+    return managers
+
+# Initialize all managers
+async def initialize_managers():
+    """Initialize all managers with proper error handling"""
+    global managers
     
-    logger.info("  All managers initialized successfully")
-except Exception as e:
-    logger.error(f"  Failed to initialize managers: {e}")
-    raise
+    try:
+        logger.info("Initializing managers...")
+        
+        # 1. Initialize Database Manager
+        logger.info("  Initializing database manager...")
+        from app.models.database import init_db
+        await init_db(settings.database_url)
+        managers['database'] = DatabaseManager(settings.database_url)
+        
+        # 2. Initialize Cache Manager
+        logger.info("  Initializing cache manager...")
+        managers['cache'] = CacheManager()
+        
+        # 3. Initialize Content Manager
+        logger.info("  Initializing content manager...")
+        managers['content'] = ContentManager(settings.firebase_credentials_path)
+        
+        # 4. Initialize Realtime Manager
+        logger.info("  Initializing realtime manager...")
+        managers['realtime'] = RealtimeManager()
+        
+        # 5. Initialize Metrics Manager
+        logger.info("  Initializing metrics manager...")
+        managers['metrics'] = MetricsManager(
+            cache_manager=managers['cache'],
+            database_manager=managers['database']
+        )
+        
+        # 6. Initialize Profile Manager
+        logger.info("  Initializing profile manager...")
+        managers['profile'] = UserProfileManager(
+            database_manager=managers['database'],
+            content_manager=managers['content']
+        )
+        
+        # 7. Initialize WebSocket Manager (FIXED - don't pass 'websocket' to itself)
+        logger.info("  Initializing websocket manager...")
+        # Create managers dict without 'websocket' key to avoid circular dependency
+        websocket_managers = {
+            'database': managers['database'],
+            'cache': managers['cache'],
+            'content': managers['content'],
+            'realtime': managers['realtime'],
+            'metrics': managers['metrics'],
+            'profile': managers['profile']
+        }
+        managers['websocket'] = WebSocketHandler(websocket_managers)
+        
+        # 8. Set cross-references between managers AFTER all are created
+        logger.info("  Setting up manager cross-references...")
+        managers['realtime'].set_websocket_handler(managers['websocket'])
+        managers['websocket'].set_server_state(server_state)
+        
+        logger.info("  All managers initialized successfully")
+        logger.info("  Multi-user conversation flow system ready")
+        return True
+        
+    except Exception as e:
+        logger.error(f"  Failed to initialize managers: {e}")
+        raise
 
-# Pydantic models for API endpoints
-class DeviceStatus(BaseModel):
-    device_id: str
-    status: str
-    connected_at: datetime
-    conversation_active: bool
-    episode: Optional[str] = None
-
-class ConversationStats(BaseModel):
-    device_id: str
-    start_time: datetime
-    duration: Optional[float] = None
-    messages_exchanged: int
-    episode: Optional[str] = None
-
-class ServerStats(BaseModel):
-    uptime_seconds: float
-    active_devices: int
-    total_conversations: int
-    total_messages: int
-    openai_connected: bool
-
-
+# Health check endpoints
 @app.get("/health")
 async def health_check():
     """Comprehensive health check"""
     try:
-        # Test OpenAI connection
-        openai_healthy = bool(os.getenv("OPENAI_API_KEY"))
-        
-        # Check manager states
-        managers_healthy = all([
-            realtime_manager is not None,
-            content_manager is not None,
-            websocket_handler is not None
-        ])
-        
         uptime = time.time() - server_state.server_start_time
         
+        # Get conversation flow stats
+        conversation_stats = {}
+        if 'websocket' in managers:
+            try:
+                conversation_stats = managers['websocket'].conversation_flow.get_active_conversations()
+            except:
+                conversation_stats = {}
+        
         health_status = {
-            "status": "healthy" if (openai_healthy and managers_healthy) else "degraded",
+            "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "uptime_seconds": uptime,
-            "checks": {
-                "openai_key_configured": openai_healthy,
-                "managers_initialized": managers_healthy,
-                "active_connections": len(server_state.active_devices),
-                "total_conversations": server_state.total_conversations
+            "managers": {
+                "database": "database" in managers,
+                "cache": "cache" in managers,
+                "content": "content" in managers,
+                "realtime": "realtime" in managers,
+                "websocket": "websocket" in managers,
+                "metrics": "metrics" in managers,
+                "profile": "profile" in managers,
+                "conversation_flow": "websocket" in managers and hasattr(managers['websocket'], 'conversation_flow')
             },
-            "version": "1.0.0",
-            "service": "StoryTeller Server"
+            "active_connections": len(server_state.active_devices),
+            "active_conversations": len(conversation_stats),
+            "total_conversations": server_state.total_conversations,
+            "version": "2.0.0",
+            "service": "ESP32 Language Learning System - Multi-User"
         }
         
         return health_status
@@ -145,203 +197,114 @@ async def health_check():
             "timestamp": datetime.now().isoformat()
         }
 
-@app.get("/status", response_model=ServerStats)
+@app.get("/status")
 async def server_status():
     """Get detailed server status"""
     uptime = time.time() - server_state.server_start_time
     
-    return ServerStats(
-        uptime_seconds=uptime,
-        active_devices=len(server_state.active_devices),
-        total_conversations=server_state.total_conversations,
-        total_messages=server_state.total_messages,
-        openai_connected=bool(os.getenv("OPENAI_API_KEY"))
-    )
-
-# === DEVICE MANAGEMENT ENDPOINTS ===
-
-@app.get("/devices", response_model=List[DeviceStatus])
-async def get_active_devices():
-    """Get list of all active devices"""
-    devices = []
-    for device_id, device_info in server_state.active_devices.items():
-        devices.append(DeviceStatus(
-            device_id=device_id,
-            status=device_info.get("status", "unknown"),
-            connected_at=device_info.get("connected_at", datetime.now()),
-            conversation_active=device_info.get("conversation_active", False),
-            episode=device_info.get("current_episode")
-        ))
-    return devices
-
-@app.get("/devices/{device_id}")
-async def get_device_status(device_id: str):
-    """Get status of specific device"""
-    if device_id not in server_state.active_devices:
-        raise HTTPException(status_code=404, detail="Device not found")
+    # Get cache status
+    cache_status = "unknown"
+    if 'cache' in managers:
+        try:
+            cache_info = await managers['cache'].get_connection_status()
+            cache_status = cache_info['type']
+        except:
+            cache_status = "error"
     
-    device_info = server_state.active_devices[device_id]
-    return DeviceStatus(
-        device_id=device_id,
-        status=device_info.get("status", "unknown"),
-        connected_at=device_info.get("connected_at", datetime.now()),
-        conversation_active=device_info.get("conversation_active", False),
-        episode=device_info.get("current_episode")
-    )
+    # Get realtime connection count
+    realtime_connections = 0
+    if 'realtime' in managers:
+        try:
+            stats = managers['realtime'].get_connection_stats()
+            realtime_connections = stats.get('active_connections', 0)
+        except:
+            realtime_connections = 0
+    
+    # Get conversation flow stats
+    conversation_stats = {}
+    if 'websocket' in managers:
+        try:
+            conversation_stats = managers['websocket'].conversation_flow.get_active_conversations()
+        except:
+            conversation_stats = {}
+    
+    return {
+        "status": "healthy",
+        "uptime_seconds": uptime,
+        "active_esp32_connections": len(server_state.active_devices),
+        "active_realtime_connections": realtime_connections,
+        "active_conversations": len(conversation_stats),
+        "total_conversations": server_state.total_conversations,
+        "total_messages": server_state.total_messages,
+        "database": "connected" if 'database' in managers else "not_connected",
+        "cache": cache_status,
+        "firebase": "connected" if 'content' in managers and managers['content'].db else "mock_mode",
+        "openai_connected": bool(os.getenv("OPENAI_API_KEY")),
+        "conversation_flow": "ready" if 'websocket' in managers and hasattr(managers['websocket'], 'conversation_flow') else "not_ready"
+    }
 
-@app.post("/devices/{device_id}/disconnect")
-async def disconnect_device(device_id: str):
-    """Manually disconnect a device"""
-    if device_id not in server_state.active_devices:
-        raise HTTPException(status_code=404, detail="Device not found")
+# Get active conversations endpoint
+@app.get("/conversations")
+async def get_active_conversations():
+    """Get all active conversations"""
+    if 'websocket' not in managers:
+        return {"conversations": {}}
     
     try:
-        # End conversation and cleanup
-        await websocket_handler._cleanup_connection(device_id)
-        return {"message": f"Device {device_id} disconnected successfully"}
+        conversations = managers['websocket'].conversation_flow.get_active_conversations()
+        return {"conversations": conversations, "total": len(conversations)}
     except Exception as e:
-        logger.error(f"Error disconnecting device {device_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting conversations: {e}")
+        return {"error": str(e)}
 
-# === CONVERSATION MANAGEMENT ===
-
-@app.get("/conversations", response_model=List[ConversationStats])
-async def get_conversation_stats():
-    """Get conversation statistics"""
-    conversations = []
-    for device_id, stats in server_state.conversation_stats.items():
-        conversations.append(ConversationStats(
-            device_id=device_id,
-            start_time=stats.get("start_time", datetime.now()),
-            duration=stats.get("duration"),
-            messages_exchanged=stats.get("messages", 0),
-            episode=stats.get("episode")
-        ))
-    return conversations
-
-@app.get("/conversations/{device_id}")
-async def get_device_conversation_stats(device_id: str):
-    """Get conversation stats for specific device"""
-    if device_id not in server_state.conversation_stats:
-        raise HTTPException(status_code=404, detail="No conversation data found for device")
-    
-    stats = server_state.conversation_stats[device_id]
-    return ConversationStats(
-        device_id=device_id,
-        start_time=stats.get("start_time", datetime.now()),
-        duration=stats.get("duration"),
-        messages_exchanged=stats.get("messages", 0),
-        episode=stats.get("episode")
-    )
-
-# === CONTENT MANAGEMENT ===
-
-@app.get("/episodes")
-async def get_available_episodes():
-    """Get list of available episodes"""
-    try:
-        episodes = await content_manager.get_available_episodes()
-        return {"episodes": episodes}
-    except Exception as e:
-        logger.error(f"Error fetching episodes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/episodes/{device_id}/next")
-async def get_next_episode(device_id: str):
-    """Get next episode for device"""
-    try:
-        user = await self.db_manager.get_or_create_user(device_id)
-
-        user_progress = {
-            'current_language': user.current_language,
-            'current_season': user.current_season,
-            'current_episode': user.current_episode
-        }
-
-  
-        episode = await self.content_manager.get_next_episode_for_user(user.id, user_progress)
-        if not episode:
-            raise HTTPException(status_code=404, detail="No episodes available")
-        return episode
-    except Exception as e:
-        logger.error(f"Error getting next episode for {device_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# === WEBSOCKET ENDPOINT ===
-
-@app.websocket("/upload/{device_id}")
-async def websocket_endpoint(websocket: WebSocket, device_id: str):
-    """Main WebSocket endpoint for ESP32/device connections"""
-    logger.info(f"🔌 New connection attempt from device: {device_id}")
+# WebSocket endpoint
+@app.websocket("/upload/{esp32_id}")
+async def websocket_endpoint(websocket: WebSocket, esp32_id: str):
+    """Main WebSocket endpoint for ESP32 connections"""
+    logger.info(f"New connection attempt from ESP32: {esp32_id}")
     
     try:
         # Update server state
-        server_state.active_devices[device_id] = {
+        server_state.active_devices[esp32_id] = {
             "status": "connecting",
             "connected_at": datetime.now(),
             "conversation_active": False,
             "websocket": websocket
         }
         
-        # Handle the connection
-        await websocket_handler.handle_connection(websocket, device_id)
+        # Update conversation count
+        server_state.total_conversations += 1
+        
+        # Handle the connection using the WebSocket handler
+        await managers['websocket'].handle_connection(websocket, esp32_id)
         
     except WebSocketDisconnect:
-        logger.info(f"🔌 Device {device_id} disconnected")
+        logger.info(f"ESP32 {esp32_id} disconnected")
     except Exception as e:
-        logger.error(f"  Connection error for {device_id}: {e}")
+        logger.error(f"Connection error for {esp32_id}: {e}")
     finally:
         # Cleanup
-        if device_id in server_state.active_devices:
-            del server_state.active_devices[device_id]
+        if esp32_id in server_state.active_devices:
+            del server_state.active_devices[esp32_id]
 
-# === DASHBOARD WEBSOCKET ===
+# Dashboard
+@app.get("/dashboard")
+async def dashboard():
+    """Serve dashboard HTML"""
+    return FileResponse("static/dashboard.html")
 
-@app.websocket("/dashboard/ws")
-async def dashboard_websocket(websocket: WebSocket):
-    """WebSocket endpoint for dashboard real-time updates"""
-    await websocket.accept()
-    logger.info(" Dashboard connected")
-    
-    try:
-        while True:
-            # Send periodic updates to dashboard
-            dashboard_data = {
-                "type": "status_update",
-                "timestamp": datetime.now().isoformat(),
-                "active_devices": len(server_state.active_devices),
-                "total_conversations": server_state.total_conversations,
-                "uptime": time.time() - server_state.server_start_time,
-                "devices": [
-                    {
-                        "device_id": device_id,
-                        "status": info.get("status", "unknown"),
-                        "conversation_active": info.get("conversation_active", False)
-                    }
-                    for device_id, info in server_state.active_devices.items()
-                ]
-            }
-            
-            await websocket.send_text(json.dumps(dashboard_data))
-            await asyncio.sleep(5)  # Update every 5 seconds
-            
-    except WebSocketDisconnect:
-        logger.info("📊 Dashboard disconnected")
-    except Exception as e:
-        logger.error(f"  Dashboard websocket error: {e}")
-
-# === ADMIN ENDPOINTS ===
-
+# Admin endpoints
 @app.post("/admin/reset")
 async def reset_server_state():
     """Reset server state (admin only)"""
     try:
         # Disconnect all devices
-        for device_id in list(server_state.active_devices.keys()):
+        for esp32_id in list(server_state.active_devices.keys()):
             try:
-                await websocket_handler._cleanup_connection(device_id)
+                if 'websocket' in managers:
+                    await managers['websocket']._cleanup_connection(esp32_id)
             except Exception as e:
-                logger.warning(f"Error disconnecting {device_id}: {e}")
+                logger.warning(f"Error disconnecting {esp32_id}: {e}")
         
         # Reset state
         server_state.active_devices.clear()
@@ -349,37 +312,43 @@ async def reset_server_state():
         server_state.total_conversations = 0
         server_state.total_messages = 0
         
-        logger.info("🔄 Server state reset")
+        logger.info("Server state reset")
         return {"message": "Server state reset successfully"}
     except Exception as e:
         logger.error(f"Error resetting server state: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/admin/logs")
-async def get_recent_logs():
-    """Get recent server logs (admin only)"""
+@app.get("/admin/conversations/{esp32_id}")
+async def get_conversation_details(esp32_id: str):
+    """Get detailed conversation info for specific device"""
+    if 'websocket' not in managers:
+        raise HTTPException(status_code=500, detail="WebSocket manager not available")
+    
     try:
-        # Read last 100 lines of log file
-        if os.path.exists("server.log"):
-            with open("server.log", "r") as f:
-                lines = f.readlines()
-                recent_lines = lines[-100:] if len(lines) > 100 else lines
-                return {"logs": recent_lines}
-        else:
-            return {"logs": ["No log file found"]}
+        context = managers['websocket'].conversation_flow.get_user_context(esp32_id)
+        if not context:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        return {
+            "esp32_id": esp32_id,
+            "user_id": context.user_id,
+            "state": context.state.value,
+            "current_episode": context.current_episode,
+            "next_episode": context.next_episode,
+            "user_info": context.user_info,
+            "session_stats": context.get_session_stats(),
+            "words_learned_this_session": context.words_learned_this_session,
+            "topics_covered_this_session": context.topics_covered_this_session,
+            "openai_session_id": context.openai_session_id,
+            "last_activity": context.last_activity.isoformat()
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error reading logs: {e}")
+        logger.error(f"Error getting conversation details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# === DASHBOARD HTML ===
-
-@app.get("/dashboard")
-async def dashboard():
-    """Redirect to dashboard HTML file"""
-    return FileResponse("static/dashboard.html")
-
-# === ERROR HANDLERS ===
-
+# Error handlers
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     return {"error": "Endpoint not found", "path": str(request.url)}
@@ -389,50 +358,93 @@ async def internal_error_handler(request, exc):
     logger.error(f"Internal server error: {exc}")
     return {"error": "Internal server error", "details": str(exc)}
 
-# === STARTUP/SHUTDOWN EVENTS ===
-
+# Startup and shutdown events
 @app.on_event("startup")
 async def startup_event():
     """Server startup tasks"""
-    logger.info(" StoryTeller Server starting up...")
-    logger.info(f"  OpenAI API Key configured: {bool(os.getenv('OPENAI_API_KEY'))}")
-    logger.info("  All managers initialized")
-    logger.info(" Server ready to accept connections")
+    logger.info("ESP32 Language Learning System starting up...")
+    
+    try:
+        # Initialize all managers
+        await initialize_managers()
+        
+        # FIXED: Set up dependency injection on the app level
+        logger.info("  Setting up API dependency injection...")
+        
+        # Import the get_managers functions from endpoints and override them
+        from app.api.endpoints import get_managers as endpoints_get_managers
+        from app.api.profile_endpoints import get_managers as profile_get_managers
+        
+        app.dependency_overrides[endpoints_get_managers] = get_managers_instance
+        app.dependency_overrides[profile_get_managers] = get_managers_instance
+        
+        # Include routers after dependency injection is set up
+        logger.info("  Including API routers...")
+        app.include_router(api_router)
+        app.include_router(profile_router)
+        
+        logger.info("System startup complete - ready to accept multiple user connections")
+        
+    except Exception as e:
+        logger.error(f"Startup failed: {e}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Server shutdown tasks"""
-    logger.info(" StoryTeller Server shutting down...")
+    logger.info("ESP32 Language Learning System shutting down...")
     
     # Disconnect all devices gracefully
-    for device_id in list(server_state.active_devices.keys()):
+    for esp32_id in list(server_state.active_devices.keys()):
         try:
-            await websocket_handler._cleanup_connection(device_id)
+            if 'websocket' in managers:
+                await managers['websocket']._cleanup_connection(esp32_id)
         except Exception as e:
-            logger.warning(f"Error during cleanup for {device_id}: {e}")
+            logger.warning(f"Error during cleanup for {esp32_id}: {e}")
     
-    logger.info("  Shutdown complete")
+    # Close managers
+    if 'cache' in managers:
+        try:
+            await managers['cache'].close()
+        except Exception as e:
+            logger.warning(f"Error closing cache manager: {e}")
+    
+    if 'realtime' in managers:
+        try:
+            await managers['realtime'].cleanup_all_connections()
+        except Exception as e:
+            logger.warning(f"Error cleaning up realtime manager: {e}")
+    
+    logger.info("Shutdown complete")
 
-# === MAIN ENTRY POINT ===
-
+# Main entry point
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
     
-    logger.info("=" * 50)
-    logger.info("🧸 STORYTELLER SERVER")
-    logger.info("=" * 50)
-    logger.info(f"🌐 Starting server on {host}:{port}")
-    logger.info(f"🔑 OpenAI API Key: {'  Configured' if os.getenv('OPENAI_API_KEY') else '  Missing'}")
-    logger.info(f"📊 Dashboard: http://localhost:{port}/dashboard")
-    logger.info(f"🔗 WebSocket: ws://localhost:{port}/upload/{{device_id}}")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
+    logger.info("ESP32 LANGUAGE LEARNING SYSTEM - MULTI-USER")
+    logger.info("=" * 60)
+    logger.info(f"Starting server on {host}:{port}")
+    logger.info(f"OpenAI API Key: {'Configured' if os.getenv('OPENAI_API_KEY') else 'Missing'}")
+    logger.info(f"Dashboard: http://localhost:{port}/dashboard")
+    logger.info(f"API Docs: http://localhost:{port}/docs")
+    logger.info(f"WebSocket: ws://localhost:{port}/upload/{{esp32_id}}")
+    logger.info(f"Conversations: http://localhost:{port}/conversations")
+    logger.info("=" * 60)
+    logger.info("Features:")
+    logger.info("- Multi-user simultaneous connections")
+    logger.info("- One-to-one OpenAI Realtime API per user")
+    logger.info("- Dynamic system prompts based on user progress")
+    logger.info("- Conversation flow management")
+    logger.info("- Real-time analytics and monitoring")
+    logger.info("=" * 60)
     
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host=host,
         port=port,
         log_level="info",
-        reload=False,  # Set to True for development
+        reload=False,
         access_log=True
     )

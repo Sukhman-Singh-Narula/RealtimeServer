@@ -1,10 +1,9 @@
+# app/api/profile_endpoints.py - FIXED VERSION
+
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, validator
 from app.models.schemas import UserResponse
-from app.managers.database_manager import DatabaseManager
-from app.managers.content_manager import ContentManager
-from app.managers.user_profile_manager import UserProfileManager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -90,22 +89,23 @@ class ProfileSetupQuestion(BaseModel):
     default: Optional[str] = None
     required: bool = True
 
-# Dependency injection helper
-async def get_profile_manager(managers: Dict = Depends(None)):
-    if not managers:
-        raise HTTPException(status_code=500, detail="Managers not available")
-    
-    return UserProfileManager(
-        database_manager=managers['database'],
-        content_manager=managers['content']
-    )
+# Dependency injection - will be overridden in main.py
+async def get_managers():
+    """Get managers - will be overridden with actual implementation"""
+    raise HTTPException(status_code=500, detail="Managers not initialized")
 
-@profile_router.get("/setup-questions", response_model=List[ProfileSetupQuestion])
-async def get_profile_setup_questions(
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
+# Helper function to get profile manager
+def get_profile_manager(managers: Dict):
+    """Get profile manager from managers dict"""
+    if 'profile' not in managers:
+        raise HTTPException(status_code=500, detail="Profile manager not available")
+    return managers['profile']
+
+@profile_router.get("/setup-questions", response_model=list[ProfileSetupQuestion])
+async def get_profile_setup_questions(managers: Dict = Depends(get_managers)):
     """Get questions for user profile setup"""
     try:
+        profile_manager = get_profile_manager(managers)
         questions = await profile_manager.get_profile_setup_questions()
         return questions
     except Exception as e:
@@ -113,12 +113,10 @@ async def get_profile_setup_questions(
         raise HTTPException(status_code=500, detail="Failed to get setup questions")
 
 @profile_router.get("/{esp32_id}", response_model=ProfileResponse)
-async def get_user_profile(
-    esp32_id: str,
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
+async def get_user_profile(esp32_id: str, managers: Dict = Depends(get_managers)):
     """Get user profile for personalization"""
     try:
+        profile_manager = get_profile_manager(managers)
         profile = await profile_manager.get_user_profile(esp32_id)
         return ProfileResponse(
             esp32_id=esp32_id,
@@ -138,10 +136,11 @@ async def get_user_profile(
 async def create_user_profile(
     esp32_id: str,
     profile_data: ProfileCreateRequest,
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
+    managers: Dict = Depends(get_managers)
 ):
     """Create a new user profile"""
     try:
+        profile_manager = get_profile_manager(managers)
         profile = await profile_manager.create_user_profile(
             esp32_id=esp32_id,
             name=profile_data.name,
@@ -170,10 +169,12 @@ async def create_user_profile(
 async def update_user_profile(
     esp32_id: str,
     profile_updates: ProfileUpdateRequest,
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
+    managers: Dict = Depends(get_managers)
 ):
     """Update existing user profile"""
     try:
+        profile_manager = get_profile_manager(managers)
+        
         # Filter out None values
         updates = {k: v for k, v in profile_updates.dict().items() if v is not None}
         
@@ -202,10 +203,11 @@ async def update_user_profile(
 async def setup_profile_from_questions(
     esp32_id: str,
     responses: Dict[str, Any],
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
+    managers: Dict = Depends(get_managers)
 ):
     """Setup user profile from setup question responses"""
     try:
+        profile_manager = get_profile_manager(managers)
         profile = await profile_manager.setup_profile_from_responses(esp32_id, responses)
         
         return ProfileResponse(
@@ -225,12 +227,10 @@ async def setup_profile_from_questions(
         raise HTTPException(status_code=500, detail="Failed to setup profile")
 
 @profile_router.get("/{esp32_id}/personalization-context")
-async def get_personalization_context(
-    esp32_id: str,
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
+async def get_personalization_context(esp32_id: str, managers: Dict = Depends(get_managers)):
     """Get full personalization context for prompts"""
     try:
+        profile_manager = get_profile_manager(managers)
         context = await profile_manager.get_personalization_context(esp32_id)
         return context
     except Exception as e:
@@ -238,12 +238,10 @@ async def get_personalization_context(
         raise HTTPException(status_code=500, detail="Failed to get personalization context")
 
 @profile_router.get("/{esp32_id}/learning-preferences")
-async def get_learning_preferences(
-    esp32_id: str,
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
+async def get_learning_preferences(esp32_id: str, managers: Dict = Depends(get_managers)):
     """Get learning preferences for this user"""
     try:
+        profile_manager = get_profile_manager(managers)
         preferences = await profile_manager.get_learning_preferences(esp32_id)
         return preferences
     except Exception as e:
@@ -252,13 +250,11 @@ async def get_learning_preferences(
 
 # Enhanced endpoints that integrate with existing API
 @profile_router.get("/{esp32_id}/next-episode-with-prompts")
-async def get_next_episode_with_prompts(
-    esp32_id: str,
-    managers: Dict = Depends(None),
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
+async def get_next_episode_with_prompts(esp32_id: str, managers: Dict = Depends(get_managers)):
     """Get next episode with personalized prompts"""
     try:
+        profile_manager = get_profile_manager(managers)
+        
         # Get user and their progress
         user = await managers['database'].get_or_create_user(esp32_id)
         user_progress = {
@@ -297,63 +293,15 @@ async def get_next_episode_with_prompts(
         logger.error(f"Error getting personalized episode: {e}")
         raise HTTPException(status_code=500, detail="Failed to get personalized episode")
 
-# Simplified episode testing endpoint
-@profile_router.get("/{esp32_id}/test-prompts/{language}/{season}/{episode}")
-async def test_episode_prompts(
-    esp32_id: str,
-    language: str,
-    season: int,
-    episode: int,
-    managers: Dict = Depends(None),
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
-):
-    """Test how prompts look with user personalization"""
-    try:
-        # Get episode with prompts
-        episode_data = await managers['content'].get_episode_with_prompts(language, season, episode)
-        
-        if not episode_data:
-            raise HTTPException(status_code=404, detail="Episode not found")
-        
-        # Get personalization context
-        context = await profile_manager.get_personalization_context(esp32_id)
-        
-        # Apply personalization
-        personalized_prompts = {}
-        
-        if 'choice_agent_prompt' in episode_data:
-            personalized_prompts['choice_agent_prompt'] = episode_data['choice_agent_prompt'].format(**context)
-        
-        if 'episode_agent_prompt' in episode_data:
-            personalized_prompts['episode_agent_prompt'] = episode_data['episode_agent_prompt'].format(**context)
-        
-        return {
-            "episode_info": {
-                "title": episode_data['title'],
-                "language": language,
-                "season": season,
-                "episode": episode
-            },
-            "personalization_context": context,
-            "original_prompts": {
-                "choice_agent_prompt": episode_data.get('choice_agent_prompt', 'Not found'),
-                "episode_agent_prompt": episode_data.get('episode_agent_prompt', 'Not found')
-            },
-            "personalized_prompts": personalized_prompts
-        }
-        
-    except Exception as e:
-        logger.error(f"Error testing prompts: {e}")
-        raise HTTPException(status_code=500, detail="Failed to test prompts")
-
 # Profile validation endpoint
 @profile_router.post("/validate")
 async def validate_profile_data(
     profile_data: Dict[str, Any],
-    profile_manager: UserProfileManager = Depends(get_profile_manager)
+    managers: Dict = Depends(get_managers)
 ):
     """Validate profile data without saving"""
     try:
+        profile_manager = get_profile_manager(managers)
         validated = await profile_manager.validate_profile_data(profile_data)
         return {
             "valid": True,

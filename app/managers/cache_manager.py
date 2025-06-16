@@ -1,4 +1,5 @@
-# app/managers/cache_manager.py
+# app/managers/cache_manager.py - FIXED UNICODE LOGGING ISSUES
+
 import redis.asyncio as redis
 import json
 import asyncio
@@ -81,11 +82,11 @@ class CacheManager:
             
             # Test the connection
             await asyncio.wait_for(test_redis.ping(), timeout=5.0)
-            logger.info(f"  Redis connection successful: {host}:{self.port}")
+            logger.info(f"Redis connection successful: {host}:{self.port}")
             return test_redis
             
         except Exception as e:
-            logger.debug(f"  Redis connection failed for {host}:{self.port} - {e}")
+            logger.debug(f"Redis connection failed for {host}:{self.port} - {e}")
             try:
                 await test_redis.close()
             except:
@@ -101,7 +102,8 @@ class CacheManager:
         
         # Force fallback mode if configured
         if settings.mock_redis:
-            logger.info("🔄 Using fallback in-memory cache (mock_redis=True)")
+            # FIXED: Remove unicode emoji to prevent Windows encoding errors
+            logger.info("Using fallback in-memory cache (mock_redis=True)")
             self.using_fallback = True
             self.connection_tested = True
             return
@@ -117,12 +119,12 @@ class CacheManager:
             if test_redis:
                 self.redis = test_redis
                 self.using_fallback = False
-                logger.info(f"  Redis connected successfully: {host}:{self.port}")
+                logger.info(f"Redis connected successfully: {host}:{self.port}")
                 break
         
         if not self.redis:
-            logger.warning("  All Redis connection attempts failed")
-            logger.warning("🔄 Falling back to in-memory cache")
+            logger.warning("All Redis connection attempts failed")
+            logger.warning("Falling back to in-memory cache")
             self.using_fallback = True
         
         self.connection_tested = True

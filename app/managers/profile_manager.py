@@ -222,7 +222,7 @@ class UserProfileManager:
         
         return validated
     
-    async def get_profile_setup_questions(self) -> List[Dict[str, Any]]:
+    async def get_profile_setup_questions(self) -> list[Dict[str, Any]]:
         """Get questions for profile setup"""
         
         return [

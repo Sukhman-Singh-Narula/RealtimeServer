@@ -1,9 +1,9 @@
+# app/api/endpoints.py - FIXED VERSION WITH PROPER DEPENDENCY INJECTION
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from app.models.schemas import UserResponse, EpisodeContent
-from app.managers.database_manager import DatabaseManager
-from app.managers.content_manager import ContentManager
 import logging
 import json
 
@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["api"])
 
-# These would be injected via dependency injection in main.py
-async def get_managers():
-    # Placeholder - actual implementation in main.py
-    pass
+# Dependency injection - This will be overridden in main.py
+async def get_managers() -> Dict[str, Any]:
+    """Get managers - will be overridden with actual implementation"""
+    raise HTTPException(status_code=500, detail="Managers not initialized")
 
 # ============================================================================
 # USER ENDPOINTS
@@ -23,14 +23,18 @@ async def get_managers():
 @router.get("/users/{esp32_id}")
 async def get_user(esp32_id: str, managers: Dict = Depends(get_managers)):
     """Get user information"""
-    db_manager = managers['database']
-    user = await db_manager.get_or_create_user(esp32_id)
-    return UserResponse(
-        id=user.id,
-        esp32_id=user.esp32_id,
-        created_at=user.created_at,
-        last_active=user.last_active
-    )
+    try:
+        db_manager = managers['database']
+        user = await db_manager.get_or_create_user(esp32_id)
+        return UserResponse(
+            id=user.id,
+            esp32_id=user.esp32_id,
+            created_at=user.created_at,
+            last_active=user.last_active
+        )
+    except Exception as e:
+        logger.error(f"Error getting user {esp32_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{esp32_id}/analytics")
 async def get_user_analytics(esp32_id: str, managers: Dict = Depends(get_managers)):
@@ -79,7 +83,7 @@ async def get_user_analytics(esp32_id: str, managers: Dict = Depends(get_manager
         
     except Exception as e:
         logger.error(f"Error getting user analytics: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{esp32_id}/progress")
 async def get_user_progress(esp32_id: str, managers: Dict = Depends(get_managers)):
@@ -121,7 +125,7 @@ async def get_user_progress(esp32_id: str, managers: Dict = Depends(get_managers
         }
     except Exception as e:
         logger.error(f"Error getting user progress: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{esp32_id}/words")
 async def get_user_words_learned(
@@ -175,217 +179,7 @@ async def get_user_words_learned(
         }
     except Exception as e:
         logger.error(f"Error getting user words: {e}")
-        return {"error": str(e)}
-
-@router.get("/users/{esp32_id}/topics")
-async def get_user_topics_learned(
-    esp32_id: str,
-    language: Optional[str] = Query(None, description="Filter by language"),
-    season: Optional[int] = Query(None, description="Filter by season"),
-    managers: Dict = Depends(get_managers)
-):
-    """Get topics learned by user with optional filtering"""
-    try:
-        db_manager = managers['database']
-        user = await db_manager.get_or_create_user(esp32_id)
-        progress = await db_manager.get_user_progress(user.id)
-        
-        # Mock topics data since it's not in the basic schema
-        topics_by_episode = {}
-        total_topics = 0
-        
-        for p in progress:
-            # Apply filters
-            if language and p.language != language:
-                continue
-            if season and p.season != season:
-                continue
-            
-            episode_key = f"{p.language}_S{p.season}E{p.episode}"
-            # Generate mock topics based on episode
-            mock_topics = [f"Topic_{p.season}_{p.episode}_1", f"Topic_{p.season}_{p.episode}_2"]
-            
-            topics_by_episode[episode_key] = {
-                "language": p.language,
-                "season": p.season,
-                "episode": p.episode,
-                "topics": mock_topics if p.completed else [],
-                "completed_at": p.completed_at.isoformat() if getattr(p, 'completed_at', None) else None
-            }
-            
-            if p.completed:
-                total_topics += len(mock_topics)
-        
-        return {
-            "user_id": user.id,
-            "total_topics": total_topics,
-            "filters": {
-                "language": language,
-                "season": season
-            },
-            "topics_by_episode": topics_by_episode
-        }
-    except Exception as e:
-        logger.error(f"Error getting user topics: {e}")
-        return {"error": str(e)}
-
-@router.get("/users/{esp32_id}/daily-activity")
-async def get_user_daily_activity(
-    esp32_id: str,
-    days: int = Query(30, description="Number of days to retrieve (max 90)"),
-    managers: Dict = Depends(get_managers)
-):
-    """Get daily activity data for user"""
-    try:
-        if days > 90:
-            days = 90
-        
-        db_manager = managers['database']
-        user = await db_manager.get_or_create_user(esp32_id)
-        
-        # Generate mock daily activity data
-        daily_activity = []
-        base_date = datetime.utcnow().date()
-        
-        for i in range(days):
-            date = base_date - timedelta(days=i)
-            # Mock activity with some randomness
-            sessions_count = 0 if i % 3 == 0 else (1 if i % 7 == 0 else 2)  # Some days off
-            session_time = sessions_count * 300  # 5 minutes per session
-            conversation_time = sessions_count * 180  # 3 minutes conversation per session
-            
-            daily_activity.append({
-                "date": date.isoformat(),
-                "sessions_count": sessions_count,
-                "session_time_seconds": session_time,
-                "conversation_time_seconds": conversation_time,
-                "words_learned": sessions_count * 3,  # 3 words per session
-                "episodes_completed": 1 if sessions_count > 0 and i % 5 == 0 else 0
-            })
-        
-        # Calculate summary statistics
-        total_session_time = sum(day['session_time_seconds'] for day in daily_activity)
-        total_conversation_time = sum(day['conversation_time_seconds'] for day in daily_activity)
-        total_sessions = sum(day['sessions_count'] for day in daily_activity)
-        active_days = len([day for day in daily_activity if day['sessions_count'] > 0])
-        
-        return {
-            "user_id": user.id,
-            "period_days": days,
-            "summary": {
-                "active_days": active_days,
-                "total_sessions": total_sessions,
-                "total_session_time_seconds": total_session_time,
-                "total_conversation_time_seconds": total_conversation_time,
-                "average_session_time": total_session_time // total_sessions if total_sessions > 0 else 0,
-                "average_daily_conversation_time": total_conversation_time // days if days > 0 else 0
-            },
-            "daily_activity": daily_activity
-        }
-    except Exception as e:
-        logger.error(f"Error getting daily activity: {e}")
-        return {"error": str(e)}
-
-@router.get("/users/{esp32_id}/curriculum-progress")
-async def get_curriculum_progress(esp32_id: str, managers: Dict = Depends(get_managers)):
-    """Get detailed curriculum progress including seasons and episodes"""
-    try:
-        db_manager = managers['database']
-        user = await db_manager.get_or_create_user(esp32_id)
-        progress = await db_manager.get_user_progress(user.id)
-        
-        # Calculate progress statistics
-        completed_episodes = [p for p in progress if p.completed]
-        total_episodes_completed = len(completed_episodes)
-        
-        # Find current position
-        current_language = "spanish"  # Default
-        current_season = 1
-        current_episode = 1
-        
-        if completed_episodes:
-            # Get the latest completed episode
-            latest = max(completed_episodes, key=lambda x: (x.season, x.episode))
-            current_language = latest.language
-            current_season = latest.season
-            current_episode = latest.episode + 1  # Next episode
-            
-            # If we've completed all episodes in a season, move to next season
-            if current_episode > 7:  # Assuming 7 episodes per season
-                current_season += 1
-                current_episode = 1
-        
-        # Calculate progress statistics
-        seasons_completed = current_season - 1 if current_episode == 1 else current_season - 1
-        episodes_in_current_season = (current_episode - 1) if current_episode > 1 else 0
-        current_season_progress = episodes_in_current_season / 7.0
-        
-        # Overall progress (assuming 5 seasons available)
-        available_seasons = 5
-        total_available_episodes = available_seasons * 7
-        overall_progress = total_episodes_completed / total_available_episodes
-        
-        return {
-            "user_id": user.id,
-            "language": current_language,
-            "current_position": {
-                "season": current_season,
-                "episode": current_episode,
-                "next_episode_title": await _get_next_episode_title(
-                    current_language, 
-                    current_season, 
-                    current_episode,
-                    managers
-                )
-            },
-            "progress_statistics": {
-                "seasons_completed": seasons_completed,
-                "total_episodes_completed": total_episodes_completed,
-                "current_season_progress": round(current_season_progress, 2),
-                "overall_progress": round(overall_progress, 2),
-                "episodes_in_current_season": episodes_in_current_season,
-                "episodes_remaining_in_season": 7 - episodes_in_current_season
-            },
-            "unlocked_content": {
-                "seasons": list(range(1, min(seasons_completed + 2, available_seasons + 1))),
-                "next_season_unlocked": current_season <= available_seasons
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error getting curriculum progress: {e}")
-        return {"error": str(e)}
-
-@router.get("/users/{esp32_id}/learning-streaks")
-async def get_learning_streaks(esp32_id: str, managers: Dict = Depends(get_managers)):
-    """Get learning streak information"""
-    try:
-        db_manager = managers['database']
-        user = await db_manager.get_or_create_user(esp32_id)
-        
-        # Mock streak data
-        current_streak = 5  # Mock current streak
-        longest_streak = 12  # Mock longest streak
-        
-        # Mock weekly activity
-        active_days_this_week = 4
-        
-        return {
-            "user_id": user.id,
-            "current_streak": current_streak,
-            "longest_streak": longest_streak,
-            "this_week": {
-                "active_days": active_days_this_week,
-                "target_days": 7,
-                "completion_rate": round(active_days_this_week / 7, 2)
-            },
-            "streak_milestones": {
-                "next_milestone": _get_next_streak_milestone(current_streak),
-                "achieved_milestones": _get_achieved_milestones(current_streak)
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error getting learning streaks: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/users/{esp32_id}/progress")
 async def update_user_progress(
@@ -406,7 +200,7 @@ async def update_user_progress(
         return {"success": True, "progress_id": progress.id}
     except Exception as e:
         logger.error(f"Error updating user progress: {e}")
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # EPISODE ENDPOINTS
@@ -440,7 +234,7 @@ async def get_available_episodes(
         }
     except Exception as e:
         logger.error(f"Error getting available episodes: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/episodes/{language}/{season}/{episode}")
 async def get_episode_details(
@@ -467,12 +261,17 @@ async def get_episode_details(
 # ============================================================================
 
 @router.get("/analytics/system")
-async def get_system_analytics(days: int = Query(30, description="Number of days"), managers: Dict = Depends(get_managers)):
+async def get_system_analytics(
+    days: int = Query(30, description="Number of days"), 
+    managers: Dict = Depends(get_managers)
+):
     """Get comprehensive system analytics"""
     try:
+        db_manager = managers['database']
+        
         # Try to get real analytics from enhanced database manager
-        if hasattr(managers['database'], 'get_learning_analytics'):
-            analytics = await managers['database'].get_learning_analytics(days=days)
+        if hasattr(db_manager, 'get_learning_analytics'):
+            analytics = await db_manager.get_learning_analytics(days=days)
             return analytics
         else:
             # Fallback to mock data
@@ -498,15 +297,17 @@ async def get_system_analytics(days: int = Query(30, description="Number of days
             }
     except Exception as e:
         logger.error(f"Error getting system analytics: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analytics/languages")
 async def get_language_analytics(managers: Dict = Depends(get_managers)):
     """Get language usage statistics"""
     try:
+        db_manager = managers['database']
+        
         # Try to get real data
-        if hasattr(managers['database'], 'get_learning_analytics'):
-            analytics = await managers['database'].get_learning_analytics(days=30)
+        if hasattr(db_manager, 'get_learning_analytics'):
+            analytics = await db_manager.get_learning_analytics(days=30)
             return analytics.get('language_popularity', {})
         else:
             # Mock data
@@ -517,7 +318,7 @@ async def get_language_analytics(managers: Dict = Depends(get_managers)):
             }
     except Exception as e:
         logger.error(f"Error getting language analytics: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/leaderboard")
 async def get_leaderboard(
@@ -527,9 +328,11 @@ async def get_leaderboard(
 ):
     """Get user leaderboard"""
     try:
+        db_manager = managers['database']
+        
         # Try to get real leaderboard
-        if hasattr(managers['database'], 'get_leaderboard'):
-            leaderboard = await managers['database'].get_leaderboard(metric=metric, limit=limit)
+        if hasattr(db_manager, 'get_leaderboard'):
+            leaderboard = await db_manager.get_leaderboard(metric=metric, limit=limit)
             return leaderboard
         else:
             # Mock leaderboard data
@@ -559,7 +362,7 @@ async def get_leaderboard(
             return mock_data.get(metric, [])[:limit]
     except Exception as e:
         logger.error(f"Error getting leaderboard: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analytics/user/{user_id}")
 async def get_user_analytics_by_id(user_id: str, managers: Dict = Depends(get_managers)):
@@ -597,14 +400,18 @@ async def get_realtime_metrics(managers: Dict = Depends(get_managers)):
     """Get real-time system metrics"""
     try:
         # Get real-time connection counts
-        active_esp32 = len(managers.get('websocket', {}).active_connections) if 'websocket' in managers else 0
-        active_openai = len(managers.get('realtime', {}).connections) if 'realtime' in managers else 0
+        ws_manager = managers.get('websocket')
+        realtime_manager = managers.get('realtime')
+        cache_manager = managers.get('cache')
+        
+        active_esp32 = len(getattr(ws_manager, 'active_connections', {})) if ws_manager else 0
+        active_openai = len(getattr(realtime_manager, 'connections', {})) if realtime_manager else 0
         
         # Try to get cache status
         cache_status = "unknown"
-        if 'cache' in managers:
+        if cache_manager:
             try:
-                cache_info = await managers['cache'].get_connection_status()
+                cache_info = await cache_manager.get_connection_status()
                 cache_status = cache_info['type']
             except:
                 cache_status = "error"
@@ -622,7 +429,7 @@ async def get_realtime_metrics(managers: Dict = Depends(get_managers)):
         return metrics_data
     except Exception as e:
         logger.error(f"Error getting real-time metrics: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # HEALTH AND DEBUG ENDPOINTS
@@ -640,64 +447,19 @@ async def health_check():
 @router.get("/debug/connections")
 async def debug_connections(managers: Dict = Depends(get_managers)):
     """Debug endpoint to check connection status"""
-    return {
-        "websocket_manager": "websocket" in managers,
-        "realtime_manager": "realtime" in managers,
-        "database_manager": "database" in managers,
-        "cache_manager": "cache" in managers,
-        "content_manager": "content" in managers,
-        "active_websockets": len(managers.get('websocket', {}).active_connections) if 'websocket' in managers else 0,
-        "active_realtime": len(managers.get('realtime', {}).connections) if 'realtime' in managers else 0
-    }
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-async def _get_next_episode_title(language: str, season: int, episode: int, managers: Dict) -> str:
-    """Get the title of the next episode"""
     try:
-        content_manager = managers['content']
-        next_episode_data = await content_manager.get_episode(language, season, episode)
-        return next_episode_data.title if next_episode_data else "Unknown Episode"
-    except:
-        episode_titles = {
-            "spanish": {
-                1: {1: "Greetings and Family", 2: "Farm Animals", 3: "Colors and Shapes"},
-                2: {1: "Food and Drinks", 2: "Transportation", 3: "Weather"}
-            }
+        ws_manager = managers.get('websocket')
+        realtime_manager = managers.get('realtime')
+        
+        return {
+            "websocket_manager": ws_manager is not None,
+            "realtime_manager": realtime_manager is not None,
+            "database_manager": "database" in managers,
+            "cache_manager": "cache" in managers,
+            "content_manager": "content" in managers,
+            "active_websockets": len(getattr(ws_manager, 'active_connections', {})) if ws_manager else 0,
+            "active_realtime": len(getattr(realtime_manager, 'connections', {})) if realtime_manager else 0
         }
-        return episode_titles.get(language, {}).get(season, {}).get(episode, "Next Adventure")
-
-def _calculate_longest_streak(daily_activity: List[Dict]) -> int:
-    """Calculate the longest learning streak from daily activity"""
-    if not daily_activity:
-        return 0
-    
-    # Sort by date descending
-    activities = sorted(daily_activity, key=lambda x: x['date'], reverse=True)
-    
-    longest_streak = 0
-    current_streak = 0
-    
-    for activity in activities:
-        if activity['sessions_count'] > 0:
-            current_streak += 1
-            longest_streak = max(longest_streak, current_streak)
-        else:
-            current_streak = 0
-    
-    return longest_streak
-
-def _get_next_streak_milestone(current_streak: int) -> int:
-    """Get the next streak milestone"""
-    milestones = [3, 7, 14, 30, 50, 100]
-    for milestone in milestones:
-        if current_streak < milestone:
-            return milestone
-    return current_streak + 50  # Beyond 100, next milestone is +50
-
-def _get_achieved_milestones(current_streak: int) -> List[int]:
-    """Get list of achieved streak milestones"""
-    milestones = [3, 7, 14, 30, 50, 100]
-    return [m for m in milestones if current_streak >= m]
+    except Exception as e:
+        logger.error(f"Error in debug connections: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
