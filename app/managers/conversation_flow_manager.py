@@ -1,4 +1,4 @@
-# app/managers/conversation_flow_manager.py - MULTI-USER CONVERSATION FLOW SYSTEM
+# app/managers/conversation_flow_manager.py - OFFICIAL OPENAI DOCUMENTATION COMPLIANT
 
 import asyncio
 import json
@@ -36,6 +36,9 @@ class UserConversationContext:
         self.last_activity = datetime.utcnow()
         self.error_count = 0
         
+        # Track ongoing function calls (official pattern)
+        self.pending_function_calls: Dict[str, Dict[str, Any]] = {}
+        
     def update_activity(self):
         """Update last activity timestamp"""
         self.last_activity = datetime.utcnow()
@@ -63,7 +66,7 @@ class UserConversationContext:
         }
 
 class ConversationFlowManager:
-    """Manages conversation flow for multiple users simultaneously"""
+    """Manages conversation flow following official OpenAI Realtime API patterns"""
     
     def __init__(self, database_manager, content_manager, cache_manager, realtime_manager):
         self.db_manager = database_manager
@@ -74,10 +77,10 @@ class ConversationFlowManager:
         # Track active user conversations
         self.user_contexts: Dict[str, UserConversationContext] = {}
         
-        logger.info("ConversationFlowManager initialized")
+        logger.info("ConversationFlowManager initialized (Official OpenAI Compliant)")
     
     async def start_user_conversation(self, esp32_id: str, websocket_handler) -> bool:
-        """Start a conversation for a new user"""
+        """Start conversation following official OpenAI patterns"""
         try:
             logger.info(f"Starting conversation for user {esp32_id}")
             
@@ -101,26 +104,41 @@ class ConversationFlowManager:
             context.next_episode = next_episode
             context.state = ConversationState.CHOOSING_EPISODE
             
-            # Create OpenAI Realtime connection
+            logger.info(f"Next episode for {esp32_id}: {next_episode['title']} (S{next_episode['season']}E{next_episode['episode']})")
+            
+            # Create proper callback function (not lambda)
+            async def openai_callback(device_id, message_data):
+                await self._handle_openai_message(device_id, message_data, websocket_handler)
+            
+            # Create OpenAI Realtime connection with callback
             openai_connection = await self.realtime_manager.create_connection(
                 esp32_id,
-                lambda msg: self._handle_openai_message(esp32_id, msg, websocket_handler)
+                openai_callback
             )
             
             if not openai_connection:
                 logger.error(f"Failed to create OpenAI connection for {esp32_id}")
                 context.state = ConversationState.ERROR
+                context.error_count += 1
+                await self._send_error_to_user(esp32_id, "Failed to connect to AI service", websocket_handler)
                 return False
             
             context.openai_session_id = openai_connection.session_id
+            logger.info(f"OpenAI connection ready for {esp32_id}: {context.openai_session_id}")
             
-            # Configure initial conversation agent (Choice Agent)
-            await self._configure_choice_agent(esp32_id, next_episode)
+            # Configure initial conversation agent using official session.update
+            success = await self._configure_choice_agent(esp32_id, next_episode)
+            if not success:
+                logger.error(f"Failed to configure choice agent for {esp32_id}")
+                context.state = ConversationState.ERROR
+                context.error_count += 1
+                await self._send_error_to_user(esp32_id, "Failed to configure AI agent", websocket_handler)
+                return False
             
             # Send welcome message
             await self._send_welcome_message(esp32_id, websocket_handler)
             
-            # Start the conversation
+            # Start the conversation using official pattern
             self.realtime_manager.start_conversation(esp32_id)
             
             logger.info(f"Conversation started successfully for {esp32_id}")
@@ -131,6 +149,7 @@ class ConversationFlowManager:
             if esp32_id in self.user_contexts:
                 self.user_contexts[esp32_id].state = ConversationState.ERROR
                 self.user_contexts[esp32_id].error_count += 1
+            await self._send_error_to_user(esp32_id, f"Setup failed: {str(e)}", websocket_handler)
             return False
     
     async def _get_user_personalization(self, esp32_id: str) -> Dict[str, Any]:
@@ -162,12 +181,19 @@ class ConversationFlowManager:
             logger.error(f"Error getting next episode for user {user.id}: {e}")
             return None
     
-    async def _configure_choice_agent(self, esp32_id: str, episode_info: Dict[str, Any]):
-        """Configure the Choice Agent for episode selection"""
+    async def _configure_choice_agent(self, esp32_id: str, episode_info: Dict[str, Any]) -> bool:
+        """Configure Choice Agent using official session.update format"""
         try:
             context = self.user_contexts.get(esp32_id)
             if not context:
-                return
+                logger.error(f"No context found for {esp32_id}")
+                return False
+            
+            # Check if connection is ready
+            connection = self.realtime_manager.get_connection(esp32_id)
+            if not connection:
+                logger.error(f"No active connection for {esp32_id}")
+                return False
             
             # Import agent configs
             from app.agents.agent_configs import get_choice_agent_config
@@ -175,25 +201,37 @@ class ConversationFlowManager:
             # Generate choice agent configuration
             choice_config = get_choice_agent_config(episode_info, context.user_info)
             
-            # Update OpenAI session
-            self.realtime_manager.update_session(
-                esp32_id,
-                instructions=choice_config['instructions'],
-                voice=choice_config['voice'],
-                tools=choice_config['tools']
-            )
+            # Update session using official format with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                success = self.realtime_manager.update_session(
+                    esp32_id,
+                    instructions=choice_config['instructions'],
+                    voice=choice_config['voice'],
+                    tools=choice_config['tools']
+                )
+                
+                if success:
+                    logger.info(f"Choice agent configured for {esp32_id} (attempt {attempt + 1})")
+                    return True
+                else:
+                    logger.warning(f"Failed to configure choice agent for {esp32_id} (attempt {attempt + 1})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.5)
             
-            logger.info(f"Choice agent configured for {esp32_id}")
+            logger.error(f"Failed to configure choice agent for {esp32_id} after {max_retries} attempts")
+            return False
             
         except Exception as e:
             logger.error(f"Error configuring choice agent for {esp32_id}: {e}")
+            return False
     
-    async def _configure_episode_agent(self, esp32_id: str, episode_info: Dict[str, Any]):
-        """Configure the Episode Agent for learning"""
+    async def _configure_episode_agent(self, esp32_id: str, episode_info: Dict[str, Any]) -> bool:
+        """Configure Episode Agent using official session.update format"""
         try:
             context = self.user_contexts.get(esp32_id)
             if not context:
-                return
+                return False
             
             # Import agent configs
             from app.agents.agent_configs import get_episode_agent_config
@@ -201,18 +239,24 @@ class ConversationFlowManager:
             # Generate episode agent configuration
             episode_config = get_episode_agent_config(episode_info, context.user_info)
             
-            # Update OpenAI session
-            self.realtime_manager.update_session(
+            # Update session using official format
+            success = self.realtime_manager.update_session(
                 esp32_id,
                 instructions=episode_config['instructions'],
                 voice=episode_config['voice'],
                 tools=episode_config['tools']
             )
             
-            logger.info(f"Episode agent configured for {esp32_id}")
+            if success:
+                logger.info(f"Episode agent configured for {esp32_id}")
+                return True
+            else:
+                logger.error(f"Failed to configure episode agent for {esp32_id}")
+                return False
             
         except Exception as e:
             logger.error(f"Error configuring episode agent for {esp32_id}: {e}")
+            return False
     
     async def _send_welcome_message(self, esp32_id: str, websocket_handler):
         """Send personalized welcome message"""
@@ -260,41 +304,97 @@ class ConversationFlowManager:
         current_streak = learning_stats.get('current_streak_days', 0)
         
         if total_episodes == 0:
-            return f"Hola {user_name}! Welcome to your Spanish learning adventure! I'm Lingo, and I'm so excited to help you learn!"
+            return f"¡Hola {user_name}! Welcome to your Spanish learning adventure! I'm Lingo, and I'm so excited to help you learn!"
         elif total_episodes < 5:
-            return f"Welcome back {user_name}! You've learned {total_words} words so far - that's amazing! Ready for more Spanish fun?"
+            return f"¡Bienvenido {user_name}! You've learned {total_words} words so far - ¡que fantástico! Ready for more Spanish fun?"
         elif current_streak > 0:
-            return f"Fantastico {user_name}! You're on a {current_streak}-day learning streak and have learned {total_words} words! Let's keep it going!"
+            return f"¡Fantástico {user_name}! You're on a {current_streak}-day learning streak and have learned {total_words} words! ¡Vamos!"
         else:
             episode_title = context.next_episode.get('title', 'your next adventure')
-            return f"Welcome back, Spanish superstar {user_name}! Your next adventure '{episode_title}' is ready!"
+            return f"¡Bienvenido back, Spanish superstar {user_name}! Your next adventure '{episode_title}' is ready!"
     
     async def _handle_openai_message(self, esp32_id: str, message: Dict[str, Any], websocket_handler):
-        """Handle messages from OpenAI Realtime API"""
+        """Handle OpenAI messages following official event patterns"""
         try:
             context = self.user_contexts.get(esp32_id)
             if not context:
+                logger.warning(f"No context found for OpenAI message from {esp32_id}")
                 return
             
             context.update_activity()
             event_type = message.get('type')
             
+            logger.debug(f"OpenAI message for {esp32_id}: {event_type}")
+            
+            # Handle official audio events
             if event_type == 'response.audio.delta':
-                # Forward audio to user
+                # Forward audio chunks to user (official pattern)
                 audio_data = message.get('delta')
                 if audio_data:
                     await self._forward_audio_to_user(esp32_id, audio_data, websocket_handler)
                     
+            elif event_type == 'response.audio.done':
+                # Audio response completed (official event)
+                await websocket_handler.send_message(esp32_id, {
+                    "type": "audio_complete",
+                    "message": "AI finished speaking"
+                })
+            
+            # Handle official text events
+            elif event_type == 'response.text.delta':
+                # Forward text chunks
+                text_data = message.get('delta')
+                if text_data:
+                    await websocket_handler.send_message(esp32_id, {
+                        "type": "text_delta",
+                        "text": text_data
+                    })
+                    
+            elif event_type == 'response.text.done':
+                # Text response completed
+                await websocket_handler.send_message(esp32_id, {
+                    "type": "text_complete",
+                    "message": "Text response completed"
+                })
+            
+            # Handle official function calling events
             elif event_type == 'response.function_call_arguments.done':
-                # Handle function calls from agents
-                await self._handle_agent_function_call(esp32_id, message, websocket_handler)
+                # Function call arguments complete (official pattern)
+                await self._handle_function_call_complete(esp32_id, message, websocket_handler)
+                
+            # Handle official response lifecycle events
+            elif event_type == 'response.created':
+                logger.info(f"Response created for {esp32_id}")
                 
             elif event_type == 'response.done':
-                # Response completed
+                # Response completed (official event)
                 await self._handle_response_complete(esp32_id, message, websocket_handler)
                 
+            # Handle official session events
+            elif event_type == 'session.updated':
+                logger.info(f"Session updated for {esp32_id}")
+                
+            # Handle official audio buffer events (VAD)
+            elif event_type == 'input_audio_buffer.speech_started':
+                logger.info(f"User started speaking: {esp32_id}")
+                await websocket_handler.send_message(esp32_id, {
+                    "type": "speech_started",
+                    "message": "User started speaking"
+                })
+                
+            elif event_type == 'input_audio_buffer.speech_stopped':
+                logger.info(f"User stopped speaking: {esp32_id}")
+                await websocket_handler.send_message(esp32_id, {
+                    "type": "speech_stopped", 
+                    "message": "User stopped speaking"
+                })
+            
+            # Handle official conversation events
+            elif event_type == 'conversation.item.created':
+                logger.debug(f"Conversation item created for {esp32_id}")
+                
+            # Handle official error events
             elif event_type == 'error':
-                # Handle OpenAI errors
                 await self._handle_openai_error(esp32_id, message, websocket_handler)
                 
         except Exception as e:
@@ -303,25 +403,22 @@ class ConversationFlowManager:
                 self.user_contexts[esp32_id].error_count += 1
     
     async def _forward_audio_to_user(self, esp32_id: str, audio_data: str, websocket_handler):
-        """Forward audio from OpenAI to user"""
+        """Forward audio from OpenAI to user (official pattern)"""
         try:
-            import base64
-            from app.utils.audio import AudioProcessor
-            
-            # Decode and convert audio
-            audio_bytes_24khz = base64.b64decode(audio_data)
-            audio_processor = AudioProcessor()
-            audio_bytes_16khz = audio_processor.convert_sample_rate(audio_bytes_24khz, 24000, 16000)
-            
-            # Send to user
-            await websocket_handler.send_audio(esp32_id, audio_bytes_16khz)
+            # Send audio chunk to user using official response.audio.delta format
+            await websocket_handler.send_message(esp32_id, {
+                "type": "audio_chunk",
+                "audio": audio_data,
+                "timestamp": datetime.now().isoformat()
+            })
             
         except Exception as e:
             logger.error(f"Error forwarding audio to {esp32_id}: {e}")
     
-    async def _handle_agent_function_call(self, esp32_id: str, message: Dict[str, Any], websocket_handler):
-        """Handle function calls from agents"""
+    async def _handle_function_call_complete(self, esp32_id: str, message: Dict[str, Any], websocket_handler):
+        """Handle completed function calls using official pattern"""
         try:
+            # Extract function call details (official format)
             call_id = message.get('call_id')
             name = message.get('name')
             arguments = message.get('arguments', '{}')
@@ -331,22 +428,19 @@ class ConversationFlowManager:
             except:
                 args = {}
             
-            logger.info(f"Function call from {esp32_id}: {name}({args})")
+            logger.info(f"Function call completed for {esp32_id}: {name}({args})")
             
-            # Handle the function call
+            # Execute the function call
             result = await self._execute_agent_function(esp32_id, name, args, websocket_handler)
             
-            # Send result back to OpenAI
-            self.realtime_manager.send_event(esp32_id, {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": json.dumps(result)
-                }
-            })
+            # Send function output back using official format
+            self.realtime_manager.send_function_call_output(
+                esp32_id, 
+                call_id, 
+                json.dumps(result)
+            )
             
-            # Create response
+            # Create response to continue conversation (official pattern)
             self.realtime_manager.create_response(esp32_id)
             
         except Exception as e:
@@ -406,8 +500,11 @@ class ConversationFlowManager:
             context.state = ConversationState.LEARNING
             context.current_episode = episode_data
             
-            # Configure episode agent
-            await self._configure_episode_agent(esp32_id, episode_data)
+            # Configure episode agent using official session.update
+            success = await self._configure_episode_agent(esp32_id, episode_data)
+            if not success:
+                logger.error(f"Failed to configure episode agent for {esp32_id}")
+                return
             
             # Update session cache
             await self.cache_manager.update_agent_state(esp32_id, "LEARNING", "episode_agent")
@@ -416,7 +513,7 @@ class ConversationFlowManager:
             await websocket_handler.send_message(esp32_id, {
                 "type": "episode_started",
                 "episode": episode_data,
-                "message": f"Let's start learning with '{episode_data['title']}'!"
+                "message": f"¡Perfecto! Let's start learning with '{episode_data['title']}'!"
             })
             
         except Exception as e:
@@ -442,20 +539,20 @@ class ConversationFlowManager:
                 context.state = ConversationState.CHOOSING_EPISODE
                 
                 # Configure choice agent for next episode
-                await self._configure_choice_agent(esp32_id, next_episode)
-                
-                # Send completion message
-                await websocket_handler.send_message(esp32_id, {
-                    "type": "episode_completed",
-                    "message": f"Episode completed! Ready for your next adventure: '{next_episode['title']}'?",
-                    "next_episode": next_episode,
-                    "stats": context.get_session_stats()
-                })
+                success = await self._configure_choice_agent(esp32_id, next_episode)
+                if success:
+                    # Send completion message
+                    await websocket_handler.send_message(esp32_id, {
+                        "type": "episode_completed",
+                        "message": f"¡Fantástico! Episode completed! Ready for your next adventure: '{next_episode['title']}'?",
+                        "next_episode": next_episode,
+                        "stats": context.get_session_stats()
+                    })
             else:
                 # No more episodes
                 await websocket_handler.send_message(esp32_id, {
                     "type": "all_episodes_completed",
-                    "message": "Congratulations! You've completed all available episodes!",
+                    "message": "¡Increíble! You've completed all available episodes! ¡Eres fantástico!",
                     "stats": context.get_session_stats()
                 })
                 
@@ -463,7 +560,7 @@ class ConversationFlowManager:
             logger.error(f"Error handling episode completion for {esp32_id}: {e}")
     
     async def _handle_response_complete(self, esp32_id: str, message: Dict[str, Any], websocket_handler):
-        """Handle response completion"""
+        """Handle response completion (official response.done event)"""
         try:
             context = self.user_contexts.get(esp32_id)
             if not context:
@@ -479,7 +576,7 @@ class ConversationFlowManager:
             logger.error(f"Error handling response complete for {esp32_id}: {e}")
     
     async def _handle_openai_error(self, esp32_id: str, message: Dict[str, Any], websocket_handler):
-        """Handle OpenAI API errors"""
+        """Handle OpenAI API errors (official error event)"""
         try:
             context = self.user_contexts.get(esp32_id)
             if context:
@@ -509,8 +606,18 @@ class ConversationFlowManager:
         except Exception as e:
             logger.error(f"Error handling no episodes for {esp32_id}: {e}")
     
+    async def _send_error_to_user(self, esp32_id: str, error_message: str, websocket_handler):
+        """Send error message to user"""
+        try:
+            await websocket_handler.send_message(esp32_id, {
+                "type": "error",
+                "message": error_message
+            })
+        except Exception as e:
+            logger.error(f"Error sending error message to {esp32_id}: {e}")
+    
     async def handle_user_audio(self, esp32_id: str, audio_data: bytes):
-        """Handle audio input from user"""
+        """Handle audio input from user using official input_audio_buffer.append"""
         try:
             context = self.user_contexts.get(esp32_id)
             if not context:
@@ -519,7 +626,7 @@ class ConversationFlowManager:
             
             context.update_activity()
             
-            # Send audio to OpenAI
+            # Send audio to OpenAI using official format
             self.realtime_manager.send_audio(esp32_id, audio_data)
             
         except Exception as e:
@@ -534,7 +641,7 @@ class ConversationFlowManager:
                 logger.info(f"Ending conversation for {esp32_id} - Duration: {context.get_session_stats()['session_duration_seconds']}s")
             
             # Close OpenAI connection
-            self.realtime_manager.close_connection(esp32_id)
+            self.realtime_manager.end_conversation(esp32_id)
             
             # Remove from active contexts
             if esp32_id in self.user_contexts:
