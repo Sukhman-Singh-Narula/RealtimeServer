@@ -934,3 +934,339 @@
 2025-06-16 13:52:11,454 - app.managers.realtime_manager - INFO - Closed realtime connection for TEST_DEVICE_001
 2025-06-16 13:52:11,454 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected
 2025-06-16 13:52:11,454 - app.api.websocket_handler - INFO - Cleanup completed for TEST_DEVICE_001
+2025-06-18 17:24:57,855 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 17:24:57,855 - app.main - INFO - Initializing managers...
+2025-06-18 17:24:57,855 - app.main - INFO -   Initializing database manager...
+2025-06-18 17:24:57,855 - app.models.database - INFO - Initializing database...
+2025-06-18 17:24:57,910 - app.models.database - INFO - Database tables created successfully
+2025-06-18 17:24:57,911 - app.models.database - INFO - Database initialization completed
+2025-06-18 17:24:57,911 - app.main - INFO -   Initializing cache manager...
+2025-06-18 17:24:57,911 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 17:24:57,911 - app.main - INFO -   Initializing content manager...
+2025-06-18 17:24:57,957 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 17:24:57,958 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 17:24:57,958 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 17:24:57,958 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 17:24:57,958 - app.main - INFO -   Initializing profile manager...
+2025-06-18 17:24:57,958 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 17:24:57,960 - app.managers.conversation_flow_manager - INFO - ConversationFlowManager initialized (Official OpenAI Compliant)
+2025-06-18 17:24:57,960 - app.api.websocket_handler - INFO - WebSocketHandler initialized with ConversationFlowManager
+2025-06-18 17:24:57,961 - app.main - INFO -   Setting up manager cross-references...
+2025-06-18 17:24:57,961 - app.managers.realtime_manager - INFO - WebSocket handler set for RealtimeManager
+2025-06-18 17:24:57,961 - app.api.websocket_handler - INFO - Server state set for WebSocketHandler
+2025-06-18 17:24:57,961 - app.main - INFO -   All managers initialized successfully
+2025-06-18 17:24:57,961 - app.main - INFO -   Multi-user conversation flow system ready
+2025-06-18 17:24:57,961 - app.main - INFO -   Setting up API dependency injection...
+2025-06-18 17:24:57,961 - app.main - INFO -   Including API routers...
+2025-06-18 17:24:57,975 - app.main - INFO - System startup complete - ready to accept multiple user connections
+2025-06-18 17:25:02,054 - app.managers.cache_manager - INFO - Initializing Redis connection...
+2025-06-18 17:25:02,054 - app.managers.cache_manager - INFO - Using fallback in-memory cache (mock_redis=True)
+2025-06-18 17:25:07,574 - app.main - ERROR - Internal server error: 'dict' object is not callable
+2025-06-18 17:27:00,218 - app.main - INFO - New connection attempt from ESP32: TEST_DEVICE_001
+2025-06-18 17:27:00,218 - app.api.websocket_handler - INFO - Handling connection for device ID: TEST_DEVICE_001
+2025-06-18 17:27:00,219 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 connected
+2025-06-18 17:27:00,219 - app.managers.conversation_flow_manager - INFO - Starting conversation for user TEST_DEVICE_001
+2025-06-18 17:27:00,257 - app.managers.content_manager - INFO - Finding next episode for user bb70a4f5-40ad-4c1b-b562-72c714add385: spanish S1E1
+2025-06-18 17:27:03,176 - app.managers.content_manager - INFO - Retrieved episode with prompts: spanish_1_1
+2025-06-18 17:27:03,177 - app.managers.content_manager - INFO - Next episode found: Greetings and Family for user bb70a4f5-40ad-4c1b-b562-72c714add385
+2025-06-18 17:27:03,177 - app.managers.conversation_flow_manager - INFO - Next episode for TEST_DEVICE_001: Greetings and Family (S1E1)
+2025-06-18 17:27:03,177 - app.managers.realtime_manager - INFO - Creating OpenAI Realtime connection for TEST_DEVICE_001
+2025-06-18 17:27:04,993 - app.managers.realtime_manager - INFO - Connected to OpenAI Realtime API for TEST_DEVICE_001
+2025-06-18 17:27:04,993 - app.managers.realtime_manager - INFO - Starting session lifecycle handler for TEST_DEVICE_001
+2025-06-18 17:27:04,993 - app.managers.realtime_manager - INFO - Session created for TEST_DEVICE_001: sess_BjlhXvpd05RPMtgMwLOhd
+2025-06-18 17:27:05,089 - app.managers.realtime_manager - INFO - Session ready for TEST_DEVICE_001: sess_BjlhXvpd05RPMtgMwLOhd
+2025-06-18 17:27:05,089 - app.managers.conversation_flow_manager - INFO - OpenAI connection ready for TEST_DEVICE_001: sess_BjlhXvpd05RPMtgMwLOhd
+2025-06-18 17:27:05,092 - app.agents.agent_configs - INFO - Creating choice agent config for next episode: Greetings and Family
+2025-06-18 17:27:05,092 - app.agents.agent_configs - INFO - Choice agent config created for friend, age 6
+2025-06-18 17:27:05,092 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001 with voice: alloy
+2025-06-18 17:27:05,092 - app.managers.conversation_flow_manager - INFO - Choice agent configured for TEST_DEVICE_001 (attempt 1)
+2025-06-18 17:27:05,119 - app.managers.realtime_manager - INFO - Response creation requested for TEST_DEVICE_001
+2025-06-18 17:27:05,120 - app.managers.realtime_manager - INFO - Conversation started for TEST_DEVICE_001
+2025-06-18 17:27:05,120 - app.managers.conversation_flow_manager - INFO - Conversation started successfully for TEST_DEVICE_001
+2025-06-18 17:27:05,120 - app.api.websocket_handler - INFO - Conversation setup complete for TEST_DEVICE_001
+2025-06-18 17:27:05,417 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 17:27:05,417 - app.managers.conversation_flow_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 17:27:05,452 - app.managers.realtime_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 17:27:05,452 - app.managers.conversation_flow_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 17:27:06,202 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.added
+2025-06-18 17:27:06,215 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.added
+2025-06-18 17:27:07,305 - app.managers.realtime_manager - INFO - Audio response completed for TEST_DEVICE_001
+2025-06-18 17:27:07,305 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.done
+2025-06-18 17:27:07,306 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.done
+2025-06-18 17:27:07,306 - app.managers.realtime_manager - INFO - Response completed for TEST_DEVICE_001
+2025-06-18 17:27:15,648 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 17:27:44,574 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: audio_data
+2025-06-18 17:27:44,675 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 17:28:17,927 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected (disconnect message)
+2025-06-18 17:28:17,927 - app.api.websocket_handler - INFO - Cleaning up connection for TEST_DEVICE_001
+2025-06-18 17:28:17,927 - app.managers.conversation_flow_manager - INFO - Ending conversation for TEST_DEVICE_001 - Duration: 77s
+2025-06-18 17:28:17,927 - app.managers.realtime_manager - INFO - Ending conversation for TEST_DEVICE_001
+2025-06-18 17:28:17,927 - app.managers.realtime_manager - INFO - Closed realtime connection for TEST_DEVICE_001
+2025-06-18 17:28:17,927 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected
+2025-06-18 17:28:17,927 - app.api.websocket_handler - INFO - Cleanup completed for TEST_DEVICE_001
+2025-06-18 17:28:18,037 - app.main - INFO - ESP32 Language Learning System shutting down...
+2025-06-18 17:28:18,037 - app.managers.cache_manager - INFO - Fallback cache cleaned up
+2025-06-18 17:28:18,037 - app.managers.realtime_manager - INFO - Cleaning up all realtime connections
+2025-06-18 17:28:18,037 - app.managers.realtime_manager - INFO - All realtime connections cleaned up
+2025-06-18 17:28:18,037 - app.main - INFO - Shutdown complete
+2025-06-18 17:31:22,025 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 17:31:22,026 - app.main - INFO - Initializing managers...
+2025-06-18 17:31:22,026 - app.main - INFO -   Initializing database manager...
+2025-06-18 17:31:22,026 - app.models.database - INFO - Initializing database...
+2025-06-18 17:31:22,069 - app.models.database - INFO - Database tables created successfully
+2025-06-18 17:31:22,069 - app.models.database - INFO - Database initialization completed
+2025-06-18 17:31:22,070 - app.main - INFO -   Initializing cache manager...
+2025-06-18 17:31:22,070 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 17:31:22,070 - app.main - INFO -   Initializing content manager...
+2025-06-18 17:31:22,121 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 17:31:22,122 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 17:31:22,122 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 17:31:22,122 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 17:31:22,122 - app.main - INFO -   Initializing profile manager...
+2025-06-18 17:31:22,122 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 17:31:22,124 - app.managers.conversation_flow_manager - INFO - ConversationFlowManager initialized (Official OpenAI Compliant)
+2025-06-18 17:31:22,124 - app.api.websocket_handler - INFO - WebSocketHandler initialized with ConversationFlowManager
+2025-06-18 17:31:22,124 - app.main - INFO -   Setting up manager cross-references...
+2025-06-18 17:31:22,124 - app.managers.realtime_manager - INFO - WebSocket handler set for RealtimeManager
+2025-06-18 17:31:22,125 - app.api.websocket_handler - INFO - Server state set for WebSocketHandler
+2025-06-18 17:31:22,125 - app.main - INFO -   All managers initialized successfully
+2025-06-18 17:31:22,125 - app.main - INFO -   Multi-user conversation flow system ready
+2025-06-18 17:31:22,125 - app.main - INFO -   Setting up API dependency injection...
+2025-06-18 17:31:22,125 - app.main - INFO -   Including API routers...
+2025-06-18 17:31:22,138 - app.main - INFO - System startup complete - ready to accept multiple user connections
+2025-06-18 17:31:26,862 - app.managers.cache_manager - INFO - Initializing Redis connection...
+2025-06-18 17:31:26,862 - app.managers.cache_manager - INFO - Using fallback in-memory cache (mock_redis=True)
+2025-06-18 17:32:07,701 - app.main - INFO - New connection attempt from ESP32: TEST_DEVICE_001
+2025-06-18 17:32:07,702 - app.api.websocket_handler - INFO - Handling connection for device ID: TEST_DEVICE_001
+2025-06-18 17:32:07,702 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 connected
+2025-06-18 17:32:07,702 - app.managers.conversation_flow_manager - INFO - Starting conversation for user TEST_DEVICE_001
+2025-06-18 17:32:07,730 - app.managers.content_manager - INFO - Finding next episode for user bb70a4f5-40ad-4c1b-b562-72c714add385: spanish S1E1
+2025-06-18 17:32:08,985 - app.managers.content_manager - INFO - Retrieved episode with prompts: spanish_1_1
+2025-06-18 17:32:08,985 - app.managers.content_manager - INFO - Next episode found: Greetings and Family for user bb70a4f5-40ad-4c1b-b562-72c714add385
+2025-06-18 17:32:08,985 - app.managers.conversation_flow_manager - INFO - Next episode for TEST_DEVICE_001: Greetings and Family (S1E1)
+2025-06-18 17:32:08,986 - app.managers.realtime_manager - INFO - Creating OpenAI Realtime connection for TEST_DEVICE_001
+2025-06-18 17:32:10,183 - app.managers.realtime_manager - INFO - Connected to OpenAI Realtime API for TEST_DEVICE_001
+2025-06-18 17:32:10,183 - app.managers.realtime_manager - INFO - Starting session lifecycle handler for TEST_DEVICE_001
+2025-06-18 17:32:10,194 - app.managers.realtime_manager - INFO - Session created for TEST_DEVICE_001: sess_BjlmSs8jrnsIVfRpxf8ra
+2025-06-18 17:32:10,300 - app.managers.realtime_manager - INFO - Session ready for TEST_DEVICE_001: sess_BjlmSs8jrnsIVfRpxf8ra
+2025-06-18 17:32:10,300 - app.managers.conversation_flow_manager - INFO - OpenAI connection ready for TEST_DEVICE_001: sess_BjlmSs8jrnsIVfRpxf8ra
+2025-06-18 17:32:10,304 - app.agents.agent_configs - INFO - Creating choice agent config for next episode: Greetings and Family
+2025-06-18 17:32:10,304 - app.agents.agent_configs - INFO - Choice agent config created for friend, age 6
+2025-06-18 17:32:10,304 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001 with voice: alloy
+2025-06-18 17:32:10,305 - app.managers.conversation_flow_manager - INFO - Choice agent configured for TEST_DEVICE_001 (attempt 1)
+2025-06-18 17:32:10,328 - app.managers.realtime_manager - INFO - Response creation requested for TEST_DEVICE_001
+2025-06-18 17:32:10,328 - app.managers.realtime_manager - INFO - Conversation started for TEST_DEVICE_001
+2025-06-18 17:32:10,328 - app.managers.conversation_flow_manager - INFO - Conversation started successfully for TEST_DEVICE_001
+2025-06-18 17:32:10,328 - app.api.websocket_handler - INFO - Conversation setup complete for TEST_DEVICE_001
+2025-06-18 17:32:10,657 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 17:32:10,657 - app.managers.conversation_flow_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 17:32:10,657 - app.managers.realtime_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 17:32:10,657 - app.managers.conversation_flow_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 17:32:11,279 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.added
+2025-06-18 17:32:11,289 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.added
+2025-06-18 17:32:12,349 - app.managers.realtime_manager - INFO - Audio response completed for TEST_DEVICE_001
+2025-06-18 17:32:12,349 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.done
+2025-06-18 17:32:12,349 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.done
+2025-06-18 17:32:12,349 - app.managers.realtime_manager - INFO - Response completed for TEST_DEVICE_001
+2025-06-18 17:32:19,355 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: audio_data
+2025-06-18 17:32:19,462 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 17:32:23,622 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: button_press
+2025-06-18 17:37:23,646 - app.api.websocket_handler - INFO - Connection lost for TEST_DEVICE_001 (ping failed)
+2025-06-18 17:37:23,647 - app.api.websocket_handler - INFO - Cleaning up connection for TEST_DEVICE_001
+2025-06-18 17:37:23,647 - app.managers.conversation_flow_manager - INFO - Ending conversation for TEST_DEVICE_001 - Duration: 315s
+2025-06-18 17:37:23,647 - app.managers.realtime_manager - INFO - Ending conversation for TEST_DEVICE_001
+2025-06-18 17:37:23,647 - app.managers.realtime_manager - INFO - Closed realtime connection for TEST_DEVICE_001
+2025-06-18 17:37:23,647 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected
+2025-06-18 17:37:23,648 - app.api.websocket_handler - INFO - Cleanup completed for TEST_DEVICE_001
+2025-06-18 18:23:44,132 - app.main - INFO - ESP32 Language Learning System shutting down...
+2025-06-18 18:23:44,132 - app.managers.cache_manager - INFO - Fallback cache cleaned up
+2025-06-18 18:23:44,134 - app.managers.realtime_manager - INFO - Cleaning up all realtime connections
+2025-06-18 18:23:44,134 - app.managers.realtime_manager - INFO - All realtime connections cleaned up
+2025-06-18 18:23:44,134 - app.main - INFO - Shutdown complete
+2025-06-18 18:37:32,570 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 18:37:32,570 - app.main - INFO - Initializing managers...
+2025-06-18 18:37:32,570 - app.main - INFO -   Initializing database manager...
+2025-06-18 18:37:32,570 - app.models.database - INFO - Initializing database...
+2025-06-18 18:37:32,609 - app.models.database - INFO - Database tables created successfully
+2025-06-18 18:37:32,610 - app.models.database - INFO - Database initialization completed
+2025-06-18 18:37:32,610 - app.main - INFO -   Initializing cache manager...
+2025-06-18 18:37:32,610 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 18:37:32,610 - app.main - INFO -   Initializing content manager...
+2025-06-18 18:37:32,645 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 18:37:32,646 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 18:37:32,646 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 18:37:32,646 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 18:37:32,646 - app.main - INFO -   Initializing profile manager...
+2025-06-18 18:37:32,646 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 18:37:32,660 - app.main - ERROR -   Failed to initialize managers: invalid syntax (conversation_flow_manager.py, line 723)
+2025-06-18 18:37:32,660 - app.main - ERROR - Startup failed: invalid syntax (conversation_flow_manager.py, line 723)
+2025-06-18 18:37:58,311 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 18:37:58,311 - app.main - INFO - Initializing managers...
+2025-06-18 18:37:58,311 - app.main - INFO -   Initializing database manager...
+2025-06-18 18:37:58,311 - app.models.database - INFO - Initializing database...
+2025-06-18 18:37:58,342 - app.models.database - INFO - Database tables created successfully
+2025-06-18 18:37:58,343 - app.models.database - INFO - Database initialization completed
+2025-06-18 18:37:58,343 - app.main - INFO -   Initializing cache manager...
+2025-06-18 18:37:58,343 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 18:37:58,345 - app.main - INFO -   Initializing content manager...
+2025-06-18 18:37:58,380 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 18:37:58,380 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 18:37:58,380 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 18:37:58,380 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 18:37:58,380 - app.main - INFO -   Initializing profile manager...
+2025-06-18 18:37:58,380 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 18:37:58,412 - app.main - ERROR -   Failed to initialize managers: expected an indented block after function definition on line 724 (conversation_flow_manager.py, line 725)
+2025-06-18 18:37:58,412 - app.main - ERROR - Startup failed: expected an indented block after function definition on line 724 (conversation_flow_manager.py, line 725)
+2025-06-18 18:38:09,555 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 18:38:09,555 - app.main - INFO - Initializing managers...
+2025-06-18 18:38:09,555 - app.main - INFO -   Initializing database manager...
+2025-06-18 18:38:09,555 - app.models.database - INFO - Initializing database...
+2025-06-18 18:38:09,593 - app.models.database - INFO - Database tables created successfully
+2025-06-18 18:38:09,595 - app.models.database - INFO - Database initialization completed
+2025-06-18 18:38:09,595 - app.main - INFO -   Initializing cache manager...
+2025-06-18 18:38:09,595 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 18:38:09,595 - app.main - INFO -   Initializing content manager...
+2025-06-18 18:38:09,630 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 18:38:09,630 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 18:38:09,630 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 18:38:09,630 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 18:38:09,630 - app.main - INFO -   Initializing profile manager...
+2025-06-18 18:38:09,630 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 18:38:09,656 - app.managers.conversation_flow_manager - INFO - ConversationFlowManager initialized (Official OpenAI Compliant)
+2025-06-18 18:38:09,656 - app.api.websocket_handler - INFO - WebSocketHandler initialized with ConversationFlowManager
+2025-06-18 18:38:09,656 - app.main - INFO -   Setting up manager cross-references...
+2025-06-18 18:38:09,657 - app.managers.realtime_manager - INFO - WebSocket handler set for RealtimeManager
+2025-06-18 18:38:09,657 - app.api.websocket_handler - INFO - Server state set for WebSocketHandler
+2025-06-18 18:38:09,657 - app.main - INFO -   All managers initialized successfully
+2025-06-18 18:38:09,657 - app.main - INFO -   Multi-user conversation flow system ready
+2025-06-18 18:38:09,657 - app.main - INFO -   Setting up API dependency injection...
+2025-06-18 18:38:09,657 - app.main - INFO -   Including API routers...
+2025-06-18 18:38:09,669 - app.main - INFO - System startup complete - ready to accept multiple user connections
+2025-06-18 18:38:37,437 - app.managers.cache_manager - INFO - Initializing Redis connection...
+2025-06-18 18:38:37,437 - app.managers.cache_manager - INFO - Using fallback in-memory cache (mock_redis=True)
+2025-06-18 18:38:41,029 - app.main - INFO - New connection attempt from ESP32: TEST_DEVICE_001
+2025-06-18 18:38:41,029 - app.api.websocket_handler - INFO - Handling connection for device ID: TEST_DEVICE_001
+2025-06-18 18:38:41,029 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 connected
+2025-06-18 18:38:41,029 - app.managers.conversation_flow_manager - INFO - Starting conversation for user TEST_DEVICE_001
+2025-06-18 18:38:41,056 - app.managers.content_manager - INFO - Finding next episode for user bb70a4f5-40ad-4c1b-b562-72c714add385: spanish S1E1
+2025-06-18 18:38:43,577 - app.managers.content_manager - INFO - Retrieved episode with prompts: spanish_1_1
+2025-06-18 18:38:43,577 - app.managers.content_manager - INFO - Next episode found: Greetings and Family for user bb70a4f5-40ad-4c1b-b562-72c714add385
+2025-06-18 18:38:43,577 - app.managers.conversation_flow_manager - INFO - Next episode for TEST_DEVICE_001: Greetings and Family (S1E1)
+2025-06-18 18:38:43,577 - app.managers.realtime_manager - INFO - Creating OpenAI Realtime connection for TEST_DEVICE_001
+2025-06-18 18:38:45,071 - app.managers.realtime_manager - INFO - Connected to OpenAI Realtime API for TEST_DEVICE_001
+2025-06-18 18:38:45,072 - app.managers.realtime_manager - INFO - Starting session lifecycle handler for TEST_DEVICE_001
+2025-06-18 18:38:45,106 - app.managers.realtime_manager - INFO - Session created for TEST_DEVICE_001: sess_BjmotTOfWox68x3i16dyy
+2025-06-18 18:38:45,181 - app.managers.realtime_manager - INFO - Session ready for TEST_DEVICE_001: sess_BjmotTOfWox68x3i16dyy
+2025-06-18 18:38:45,181 - app.managers.conversation_flow_manager - INFO - OpenAI connection ready for TEST_DEVICE_001: sess_BjmotTOfWox68x3i16dyy
+2025-06-18 18:38:45,182 - app.agents.agent_configs - INFO - Creating choice agent config for next episode: Greetings and Family
+2025-06-18 18:38:45,183 - app.agents.agent_configs - INFO - Choice agent config created for friend, age 6
+2025-06-18 18:38:45,183 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001 with voice: alloy
+2025-06-18 18:38:45,183 - app.managers.conversation_flow_manager - INFO - Choice agent configured for TEST_DEVICE_001 (attempt 1)
+2025-06-18 18:38:45,208 - app.managers.realtime_manager - INFO - Response creation requested for TEST_DEVICE_001
+2025-06-18 18:38:45,209 - app.managers.realtime_manager - INFO - Conversation started for TEST_DEVICE_001
+2025-06-18 18:38:45,209 - app.managers.conversation_flow_manager - INFO - Conversation started successfully for TEST_DEVICE_001
+2025-06-18 18:38:45,209 - app.api.websocket_handler - INFO - Conversation setup complete for TEST_DEVICE_001
+2025-06-18 18:38:45,487 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 18:38:45,487 - app.managers.conversation_flow_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 18:38:45,543 - app.managers.realtime_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 18:38:45,543 - app.managers.conversation_flow_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 18:38:46,134 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.added
+2025-06-18 18:38:46,144 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.added
+2025-06-18 18:38:47,070 - app.managers.realtime_manager - INFO - Audio response completed for TEST_DEVICE_001
+2025-06-18 18:38:47,071 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.done
+2025-06-18 18:38:47,071 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.done
+2025-06-18 18:38:47,071 - app.managers.realtime_manager - INFO - Response completed for TEST_DEVICE_001
+2025-06-18 18:38:55,617 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:39:25,146 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:39:25,905 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:39:26,064 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:39:27,085 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: audio_data
+2025-06-18 18:39:27,187 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 18:39:31,281 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 18:39:35,658 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: button_press
+2025-06-18 18:39:36,942 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: audio_data
+2025-06-18 18:39:37,042 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 18:39:37,429 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected (disconnect message)
+2025-06-18 18:39:37,429 - app.api.websocket_handler - INFO - Cleaning up connection for TEST_DEVICE_001
+2025-06-18 18:39:37,429 - app.managers.conversation_flow_manager - INFO - Ending conversation for TEST_DEVICE_001 - Duration: 56s
+2025-06-18 18:39:37,429 - app.managers.realtime_manager - INFO - Ending conversation for TEST_DEVICE_001
+2025-06-18 18:39:37,429 - app.managers.realtime_manager - INFO - Closed realtime connection for TEST_DEVICE_001
+2025-06-18 18:39:37,429 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected
+2025-06-18 18:39:37,430 - app.api.websocket_handler - INFO - Cleanup completed for TEST_DEVICE_001
+2025-06-18 18:40:19,072 - app.main - INFO - New connection attempt from ESP32: TEST_DEVICE_001
+2025-06-18 18:40:19,072 - app.api.websocket_handler - INFO - Handling connection for device ID: TEST_DEVICE_001
+2025-06-18 18:40:19,072 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 connected
+2025-06-18 18:40:19,072 - app.managers.conversation_flow_manager - INFO - Starting conversation for user TEST_DEVICE_001
+2025-06-18 18:40:19,084 - app.managers.content_manager - INFO - Finding next episode for user bb70a4f5-40ad-4c1b-b562-72c714add385: spanish S1E1
+2025-06-18 18:40:20,910 - app.managers.content_manager - INFO - Retrieved episode with prompts: spanish_1_1
+2025-06-18 18:40:20,910 - app.managers.content_manager - INFO - Next episode found: Greetings and Family for user bb70a4f5-40ad-4c1b-b562-72c714add385
+2025-06-18 18:40:20,910 - app.managers.conversation_flow_manager - INFO - Next episode for TEST_DEVICE_001: Greetings and Family (S1E1)
+2025-06-18 18:40:20,910 - app.managers.realtime_manager - INFO - Creating OpenAI Realtime connection for TEST_DEVICE_001
+2025-06-18 18:40:22,059 - app.managers.realtime_manager - INFO - Connected to OpenAI Realtime API for TEST_DEVICE_001
+2025-06-18 18:40:22,059 - app.managers.realtime_manager - INFO - Starting session lifecycle handler for TEST_DEVICE_001
+2025-06-18 18:40:22,081 - app.managers.realtime_manager - INFO - Session created for TEST_DEVICE_001: sess_BjmqSUihAdZ1Y3i5aJc0v
+2025-06-18 18:40:22,181 - app.managers.realtime_manager - INFO - Session ready for TEST_DEVICE_001: sess_BjmqSUihAdZ1Y3i5aJc0v
+2025-06-18 18:40:22,181 - app.managers.conversation_flow_manager - INFO - OpenAI connection ready for TEST_DEVICE_001: sess_BjmqSUihAdZ1Y3i5aJc0v
+2025-06-18 18:40:22,181 - app.agents.agent_configs - INFO - Creating choice agent config for next episode: Greetings and Family
+2025-06-18 18:40:22,182 - app.agents.agent_configs - INFO - Choice agent config created for friend, age 6
+2025-06-18 18:40:22,182 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001 with voice: alloy
+2025-06-18 18:40:22,182 - app.managers.conversation_flow_manager - INFO - Choice agent configured for TEST_DEVICE_001 (attempt 1)
+2025-06-18 18:40:22,200 - app.managers.realtime_manager - INFO - Response creation requested for TEST_DEVICE_001
+2025-06-18 18:40:22,200 - app.managers.realtime_manager - INFO - Conversation started for TEST_DEVICE_001
+2025-06-18 18:40:22,200 - app.managers.conversation_flow_manager - INFO - Conversation started successfully for TEST_DEVICE_001
+2025-06-18 18:40:22,200 - app.api.websocket_handler - INFO - Conversation setup complete for TEST_DEVICE_001
+2025-06-18 18:40:22,415 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:40:22,482 - app.managers.realtime_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 18:40:22,483 - app.managers.conversation_flow_manager - INFO - Session updated for TEST_DEVICE_001
+2025-06-18 18:40:22,524 - app.managers.realtime_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 18:40:22,524 - app.managers.conversation_flow_manager - INFO - Response created for TEST_DEVICE_001
+2025-06-18 18:40:23,176 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.added
+2025-06-18 18:40:23,188 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.added
+2025-06-18 18:40:24,556 - app.managers.realtime_manager - INFO - Audio response completed for TEST_DEVICE_001
+2025-06-18 18:40:24,561 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.content_part.done
+2025-06-18 18:40:24,563 - app.managers.realtime_manager - WARNING - Unknown server event for TEST_DEVICE_001: response.output_item.done
+2025-06-18 18:40:24,568 - app.managers.realtime_manager - INFO - Response completed for TEST_DEVICE_001
+2025-06-18 18:40:37,272 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: start_recording
+2025-06-18 18:40:37,768 - app.api.websocket_handler - WARNING - Unknown message type from ESP32: stop_recording
+2025-06-18 18:40:38,548 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected (disconnect message)
+2025-06-18 18:40:38,548 - app.api.websocket_handler - INFO - Cleaning up connection for TEST_DEVICE_001
+2025-06-18 18:40:38,548 - app.managers.conversation_flow_manager - INFO - Ending conversation for TEST_DEVICE_001 - Duration: 19s
+2025-06-18 18:40:38,548 - app.managers.realtime_manager - INFO - Ending conversation for TEST_DEVICE_001
+2025-06-18 18:40:38,548 - app.managers.realtime_manager - INFO - Closed realtime connection for TEST_DEVICE_001
+2025-06-18 18:40:38,548 - app.api.websocket_handler - INFO - ESP32 TEST_DEVICE_001 disconnected
+2025-06-18 18:40:38,548 - app.api.websocket_handler - INFO - Cleanup completed for TEST_DEVICE_001
+2025-06-18 18:45:26,610 - app.main - INFO - ESP32 Language Learning System shutting down...
+2025-06-18 18:45:26,611 - app.managers.cache_manager - INFO - Fallback cache cleaned up
+2025-06-18 18:45:26,611 - app.managers.realtime_manager - INFO - Cleaning up all realtime connections
+2025-06-18 18:45:26,611 - app.managers.realtime_manager - INFO - All realtime connections cleaned up
+2025-06-18 18:45:26,611 - app.main - INFO - Shutdown complete
+2025-06-18 18:45:53,348 - app.main - INFO - ESP32 Language Learning System starting up...
+2025-06-18 18:45:53,348 - app.main - INFO - Initializing managers...
+2025-06-18 18:45:53,348 - app.main - INFO -   Initializing database manager...
+2025-06-18 18:45:53,349 - app.models.database - INFO - Initializing database...
+2025-06-18 18:45:53,380 - app.models.database - INFO - Database tables created successfully
+2025-06-18 18:45:53,381 - app.models.database - INFO - Database initialization completed
+2025-06-18 18:45:53,381 - app.main - INFO -   Initializing cache manager...
+2025-06-18 18:45:53,382 - app.managers.cache_manager - INFO - Cache manager initialized with Redis target: localhost:6379
+2025-06-18 18:45:53,382 - app.main - INFO -   Initializing content manager...
+2025-06-18 18:45:53,416 - app.managers.content_manager - INFO - Firebase initialized successfully
+2025-06-18 18:45:53,417 - app.main - INFO -   Initializing realtime manager...
+2025-06-18 18:45:53,417 - app.managers.realtime_manager - INFO - RealtimeManager initialized (Official OpenAI Compliant)
+2025-06-18 18:45:53,417 - app.main - INFO -   Initializing metrics manager...
+2025-06-18 18:45:53,417 - app.main - INFO -   Initializing profile manager...
+2025-06-18 18:45:53,417 - app.main - INFO -   Initializing websocket manager...
+2025-06-18 18:45:53,418 - app.managers.conversation_flow_manager - INFO - ConversationFlowManager initialized (Official OpenAI Compliant)
+2025-06-18 18:45:53,419 - app.api.websocket_handler - INFO - WebSocketHandler initialized with ConversationFlowManager
+2025-06-18 18:45:53,419 - app.main - INFO -   Setting up manager cross-references...
+2025-06-18 18:45:53,419 - app.managers.realtime_manager - INFO - WebSocket handler set for RealtimeManager
+2025-06-18 18:45:53,419 - app.api.websocket_handler - INFO - Server state set for WebSocketHandler
+2025-06-18 18:45:53,419 - app.main - INFO -   All managers initialized successfully
+2025-06-18 18:45:53,419 - app.main - INFO -   Multi-user conversation flow system ready
+2025-06-18 18:45:53,419 - app.main - INFO -   Setting up API dependency injection...
+2025-06-18 18:45:53,419 - app.main - INFO -   Including API routers...
+2025-06-18 18:45:53,436 - app.main - INFO - System startup complete - ready to accept multiple user connections
+2025-06-18 18:45:57,440 - app.main - INFO - ESP32 Language Learning System shutting down...
+2025-06-18 18:45:57,440 - app.managers.cache_manager - INFO - Fallback cache cleaned up
+2025-06-18 18:45:57,440 - app.managers.realtime_manager - INFO - Cleaning up all realtime connections
+2025-06-18 18:45:57,440 - app.managers.realtime_manager - INFO - All realtime connections cleaned up
+2025-06-18 18:45:57,441 - app.main - INFO - Shutdown complete

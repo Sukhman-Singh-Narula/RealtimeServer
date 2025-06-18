@@ -1,4 +1,4 @@
-# app/main.py - FINAL VERSION WITH CONVERSATION FLOW SYSTEM
+# app/main.py - FINAL VERSION WITH FIXED EXCEPTION HANDLERS
 
 import os
 import logging
@@ -6,9 +6,9 @@ import asyncio
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -56,8 +56,7 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # Enable CORS
 app.add_middleware(
@@ -287,11 +286,6 @@ async def websocket_endpoint(websocket: WebSocket, esp32_id: str):
         if esp32_id in server_state.active_devices:
             del server_state.active_devices[esp32_id]
 
-# Dashboard
-@app.get("/dashboard")
-async def dashboard():
-    """Serve dashboard HTML"""
-    return FileResponse("static/dashboard.html")
 
 # Admin endpoints
 @app.post("/admin/reset")
@@ -348,15 +342,23 @@ async def get_conversation_details(esp32_id: str):
         logger.error(f"Error getting conversation details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Error handlers
+# FIXED: Error handlers that return proper Response objects
 @app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return {"error": "Endpoint not found", "path": str(request.url)}
+async def not_found_handler(request: Request, exc):
+    """Handle 404 errors with proper JSON response"""
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Endpoint not found", "path": str(request.url)}
+    )
 
 @app.exception_handler(500)
-async def internal_error_handler(request, exc):
+async def internal_error_handler(request: Request, exc):
+    """Handle 500 errors with proper JSON response"""
     logger.error(f"Internal server error: {exc}")
-    return {"error": "Internal server error", "details": str(exc)}
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "details": str(exc)}
+    )
 
 # Startup and shutdown events
 @app.on_event("startup")

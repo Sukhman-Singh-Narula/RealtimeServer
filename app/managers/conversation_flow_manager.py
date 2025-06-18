@@ -616,21 +616,347 @@ class ConversationFlowManager:
         except Exception as e:
             logger.error(f"Error sending error message to {esp32_id}: {e}")
     
-    async def handle_user_audio(self, esp32_id: str, audio_data: bytes):
-        """Handle audio input from user using official input_audio_buffer.append"""
+    async def handle_user_audio(self, esp32_id: str, audio_data: bytes, audio_format: str = "pcm16"):
+        """Handle user audio input - UPDATED FOR PCM16 FORMAT"""
         try:
-            context = self.user_contexts.get(esp32_id)
+            logger.debug(f"Processing user audio for {esp32_id}: {len(audio_data)} bytes, format: {audio_format}")
+            
+            # Get or create user context
+            context = self.get_user_context(esp32_id)
             if not context:
-                logger.warning(f"No context found for audio from {esp32_id}")
+                logger.warning(f"No conversation context for {esp32_id}, creating new session")
+                await self.start_user_conversation(esp32_id)
+                context = self.get_user_context(esp32_id)
+            
+            if not context:
+                logger.error(f"Failed to create conversation context for {esp32_id}")
                 return
             
+            # Validate audio data
+            from app.utils.audio import AudioProcessor
+            audio_processor = AudioProcessor()
+            
+            if not audio_processor.validate_audio_data(audio_data, audio_format):
+                logger.warning(f"Invalid audio data from {esp32_id}")
+                return
+            
+            # Process audio based on format
+            if audio_format == "pcm16":
+                # Audio is already in the correct format (PCM16 at 24kHz)
+                processed_audio = audio_data
+                sample_rate = 24000
+            else:
+                # Convert other formats to PCM16
+                processed_audio = audio_processor.convert_to_openai_format(
+                    audio_data, 
+                    input_format=audio_format,
+                    input_rate=16000
+                )
+                sample_rate = 24000
+            
+            # Calculate audio duration for logging
+            duration = audio_processor.get_audio_duration(
+                processed_audio, 
+                sample_rate,
+                "pcm16"
+            )
+            
+            # Log audio statistics
+            num_samples = len(processed_audio) // 2
+            logger.debug(f"Audio: {duration:.3f}s, {num_samples} samples @ {sample_rate}Hz")
+            
+            # Update context
             context.update_activity()
+            context.messages_in_session += 1
+            context.audio_duration_total += duration
             
-            # Send audio to OpenAI using official format
-            self.realtime_manager.send_audio(esp32_id, audio_data)
-            
+            # Send audio to OpenAI via RealtimeManager
+            if self.realtime_manager:
+                if audio_format == "pcm16":
+                    await self.realtime_manager.handle_pcm16_audio(esp32_id, processed_audio, sample_rate)
+                else:
+                    await self.realtime_manager.process_user_audio(esp32_id, processed_audio, audio_format)
+            else:
+                logger.error("RealtimeManager not available")
+                
         except Exception as e:
             logger.error(f"Error handling user audio for {esp32_id}: {e}")
+
+    async def handle_start_recording(self, esp32_id: str, audio_format: str = "pcm16", sample_rate: int = 24000):
+        """Handle recording start event - UPDATED"""
+        try:
+            logger.info(f"User {esp32_id} started recording (format: {audio_format}, rate: {sample_rate}Hz)")
+            
+            context = self.get_user_context(esp32_id)
+            if context:
+                context.update_activity()
+                context.recording_start_time = datetime.now()
+                
+                # Clear any previous audio buffer in OpenAI and setup for PCM16
+                if self.realtime_manager:
+                    self.realtime_manager.start_conversation(esp32_id)
+                    self.realtime_manager.setup_audio_processing(esp32_id)
+                    
+        except Exception as e:
+            logger.error(f"Error handling start recording for {esp32_id}: {e}")
+
+    async def handle_stop_recording(self, esp32_id: str, total_chunks: int = 0):
+        """Handle recording stop event - UPDATED"""
+        try:
+            logger.info(f"User {esp32_id} stopped recording ({total_chunks} chunks)")
+            
+            context = self.get_user_context(esp32_id)
+            if context:
+                context.update_activity()
+                
+                # Calculate recording duration
+                if hasattr(context, 'recording_start_time') and context.recording_start_time:
+                    recording_duration = (datetime.now() - context.recording_start_time).total_seconds()
+                    context.recording_duration_total += recording_duration
+                    logger.debug(f"Recording duration: {recording_duration:.2f}s")
+                
+                # Commit audio buffer and request response from OpenAI
+                if self.realtime_manager:
+                    self.realtime_manager.commit_audio(esp32_id)
+                    
+        except Exception as e:
+            logger.error(f"Error handling stop recording for {esp32_id}: {e}")
+        async def handle_user_audio(self, esp32_id: str, audio_data: bytes, audio_format: str = "pcm16"):
+            """Handle user audio input - UPDATED FOR REAL MICROPHONE DATA"""
+            try:
+                logger.debug(f"Processing user audio for {esp32_id}: {len(audio_data)} bytes, format: {audio_format}")
+                
+                # Get or create user context
+                context = self.get_user_context(esp32_id)
+                if not context:
+                    logger.warning(f"No conversation context for {esp32_id}, creating new session")
+                    await self.start_user_conversation(esp32_id)
+                    context = self.get_user_context(esp32_id)
+                
+                if not context:
+                    logger.error(f"Failed to create conversation context for {esp32_id}")
+                    return
+                
+                # Validate audio data
+                from app.utils.audio import AudioProcessor
+                audio_processor = AudioProcessor()
+                
+                if not audio_processor.validate_audio_data(audio_data, audio_format):
+                    logger.warning(f"Invalid audio data from {esp32_id}")
+                    return
+                
+                # Convert audio to OpenAI format if needed
+                processed_audio = audio_processor.convert_to_openai_format(
+                    audio_data, 
+                    input_format=audio_format,
+                    input_rate=24000 if audio_format == "webm" else 16000
+                )
+                
+                # Calculate audio duration for logging
+                duration = audio_processor.get_audio_duration(
+                    processed_audio, 
+                    24000,  # OpenAI prefers 24kHz
+                    "pcm16" if audio_format != "webm" else "webm"
+                )
+                
+                logger.debug(f"Audio duration: {duration:.2f}s")
+                
+                # Update context
+                context.update_activity()
+                context.messages_in_session += 1
+                
+                # Send audio to OpenAI via RealtimeManager
+                if self.realtime_manager:
+                    await self.realtime_manager.process_user_audio(esp32_id, processed_audio, audio_format)
+                else:
+                    logger.error("RealtimeManager not available")
+                    
+            except Exception as e:
+                logger.error(f"Error handling user audio for {esp32_id}: {e}")
+
+    async def handle_start_recording(self, esp32_id: str, audio_format: str = "webm", sample_rate: int = 24000):
+        """Handle recording start event"""
+        try:
+            logger.info(f"User {esp32_id} started recording (format: {audio_format}, rate: {sample_rate}Hz)")
+            
+            context = self.get_user_context(esp32_id)
+            if context:
+                context.update_activity()
+                
+                # Clear any previous audio buffer in OpenAI
+                if self.realtime_manager:
+                    self.realtime_manager.start_conversation(esp32_id)
+                    
+        except Exception as e:
+            logger.error(f"Error handling start recording for {esp32_id}: {e}")
+
+    async def handle_stop_recording(self, esp32_id: str, total_chunks: int = 0):
+        """Handle recording stop event"""
+        try:
+            logger.info(f"User {esp32_id} stopped recording ({total_chunks} chunks)")
+            
+            context = self.get_user_context(esp32_id)
+            if context:
+                context.update_activity()
+                
+                # Commit audio buffer and request response from OpenAI
+                if self.realtime_manager:
+                    self.realtime_manager.commit_audio(esp32_id)
+                    
+        except Exception as e:
+            logger.error(f"Error handling stop recording for {esp32_id}: {e}")
+
+    async def handle_realtime_event(self, esp32_id: str, event: dict):
+        """Handle events from OpenAI Realtime API - ENHANCED"""
+        try:
+            event_type = event.get("type")
+            
+            if event_type == "response.audio.delta":
+                # Audio response from OpenAI
+                audio_delta = event.get("delta", "")
+                if audio_delta:
+                    # Forward audio to user via WebSocket
+                    await self.websocket_handler.send_response_to_device(esp32_id, {
+                        "type": "audio_data",
+                        "audio": audio_delta,
+                        "format": "pcm16_base64"
+                    })
+                    
+                    # Update context stats
+                    context = self.get_user_context(esp32_id)
+                    if context:
+                        context.audio_chunks_received += 1
+                        
+            elif event_type == "response.audio.done":
+                # Audio response complete
+                logger.debug(f"Audio response complete for {esp32_id}")
+                context = self.get_user_context(esp32_id)
+                if context:
+                    context.ai_responses += 1
+                    
+            elif event_type == "response.text.delta":
+                # Text response (for debugging/logging)
+                text_delta = event.get("delta", "")
+                if text_delta:
+                    logger.debug(f"AI text response: {text_delta}")
+                    
+            elif event_type == "response.text.done":
+                # Complete text response
+                full_text = event.get("text", "")
+                if full_text:
+                    logger.info(f"AI complete response: {full_text}")
+                    
+                    # Store in context for learning progress
+                    context = self.get_user_context(esp32_id)
+                    if context:
+                        context.last_ai_response = full_text
+                        
+            elif event_type == "input_audio_buffer.speech_started":
+                # User started speaking (detected by OpenAI VAD)
+                logger.debug(f"OpenAI detected speech start for {esp32_id}")
+                await self.websocket_handler.send_response_to_device(esp32_id, {
+                    "type": "speech_started",
+                    "message": "AI is listening..."
+                })
+                
+            elif event_type == "input_audio_buffer.speech_stopped":
+                # User stopped speaking (detected by OpenAI VAD)
+                logger.debug(f"OpenAI detected speech end for {esp32_id}")
+                await self.websocket_handler.send_response_to_device(esp32_id, {
+                    "type": "speech_stopped",
+                    "message": "AI is processing..."
+                })
+                
+            elif event_type == "response.created":
+                # OpenAI started generating response
+                logger.debug(f"OpenAI started response generation for {esp32_id}")
+                
+            elif event_type == "response.done":
+                # OpenAI finished generating response
+                logger.debug(f"OpenAI finished response generation for {esp32_id}")
+                
+                # Update learning progress
+                await self.update_learning_progress(esp32_id, event)
+                
+            elif event_type == "error":
+                # Handle OpenAI errors
+                error_message = event.get("error", {}).get("message", "Unknown error")
+                logger.error(f"OpenAI error for {esp32_id}: {error_message}")
+                
+                await self.websocket_handler.send_response_to_device(esp32_id, {
+                    "type": "error",
+                    "message": f"AI Error: {error_message}"
+                })
+                
+            else:
+                logger.debug(f"Unhandled OpenAI event type: {event_type}")
+                
+        except Exception as e:
+            logger.error(f"Error handling realtime event for {esp32_id}: {e}")
+
+    async def update_learning_progress(self, esp32_id: str, response_event: dict):
+        """Update user learning progress based on AI interaction"""
+        try:
+            context = self.get_user_context(esp32_id)
+            if not context:
+                return
+                
+            # Extract learning data from the response
+            response_data = response_event.get("response", {})
+            output_items = response_data.get("output", [])
+            
+            # Process each output item
+            for item in output_items:
+                if item.get("type") == "message":
+                    content = item.get("content", [])
+                    for content_part in content:
+                        if content_part.get("type") == "text":
+                            text = content_part.get("text", "")
+                            # Analyze text for learning keywords
+                            await self.analyze_learning_content(esp32_id, text)
+                        elif content_part.get("type") == "audio":
+                            transcript = content_part.get("transcript", "")
+                            if transcript:
+                                await self.analyze_learning_content(esp32_id, transcript)
+            
+            # Update session stats
+            context.words_learned_this_session = len(context.vocabulary_used)
+            context.topics_covered_this_session = list(context.topics_discussed)
+            
+        except Exception as e:
+            logger.error(f"Error updating learning progress for {esp32_id}: {e}")
+
+    async def analyze_learning_content(self, esp32_id: str, text: str):
+        """Analyze AI response text for learning content"""
+        try:
+            context = self.get_user_context(esp32_id)
+            if not context:
+                return
+                
+            # Simple keyword extraction for learning progress
+            words = text.lower().split()
+            
+            # Add new vocabulary words
+            for word in words:
+                if len(word) > 3 and word.isalpha():  # Basic word filtering
+                    context.vocabulary_used.add(word)
+            
+            # Detect topics (simple keyword matching)
+            topic_keywords = {
+                'greetings': ['hello', 'hi', 'goodbye', 'bye', 'good morning', 'good evening'],
+                'numbers': ['one', 'two', 'three', 'four', 'five', 'number', 'count'],
+                'colors': ['red', 'blue', 'green', 'yellow', 'color', 'colour'],
+                'family': ['mother', 'father', 'sister', 'brother', 'family', 'parent'],
+                'food': ['food', 'eat', 'hungry', 'breakfast', 'lunch', 'dinner'],
+                'weather': ['weather', 'sunny', 'rainy', 'cold', 'hot', 'temperature']
+            }
+            
+            for topic, keywords in topic_keywords.items():
+                if any(keyword in text.lower() for keyword in keywords):
+                    context.topics_discussed.add(topic)
+            
+        except Exception as e:
+            logger.error(f"Error analyzing learning content for {esp32_id}: {e}")
     
     async def end_user_conversation(self, esp32_id: str):
         """End conversation for a user"""
